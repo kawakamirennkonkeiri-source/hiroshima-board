@@ -1,0 +1,17 @@
+# 社内データ・個人情報は絶対に公開しない（誤って入れても除外）
+*.xlsx
+*.xlsm
+*.xls
+*.csv
+*.pptx
+*.pdf
+*.docx
+*.jpeg
+*.jpg
+*.png
+
+# OS/エディタのゴミ
+Thumbs.db
+Desktop.ini
+.DS_Store
+~$*

@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>広島 電子黒板</title>
+<style>
+  :root{
+    --blue-deep:#1c4e9c; --blue:#2f6fd6; --green:#1f9d55; --red:#d64545; --amber:#a76a00;
+    --text-primary:#1a2433; --text-secondary:#4a5568; --muted:#8a94a6;
+    --surface-0:#f4f7fb; --surface-1:#ffffff; --border:#dbe3ee; --grid:#c9d3e2;
+  }
+  *{ box-sizing:border-box; }
+  body{ margin:0; font-family:"Hiragino Sans","Yu Gothic",sans-serif; background:var(--surface-0); color:var(--text-primary); }
+  header{ display:flex; align-items:center; gap:14px; padding:12px 20px; background:var(--surface-1); border-bottom:1px solid var(--border); position:sticky; top:0; z-index:10; flex-wrap:wrap; }
+  header h1{ font-size:19px; margin:0; font-weight:800; color:var(--blue-deep); }
+  header .clock{ font-size:13px; color:var(--muted); font-weight:700; }
+  header .status{ margin-left:auto; font-size:12px; font-weight:700; color:var(--muted); }
+  nav.tabs{ display:flex; gap:8px; padding:10px 20px 0; background:var(--surface-1); border-bottom:1px solid var(--border); }
+  nav.tabs button{ appearance:none; cursor:pointer; font-family:inherit; font-size:15px; font-weight:800; border:none; background:transparent; color:var(--text-secondary); padding:10px 18px; border-bottom:3px solid transparent; }
+  nav.tabs button.sel{ color:var(--blue-deep); border-bottom-color:var(--blue-deep); }
+  .view{ display:none; padding:18px 22px 40px; max-width:1100px; margin:0 auto; }
+  .view.show{ display:block; }
+
+  /* ===== 本日進捗タブ ===== */
+  .stat-row{ display:flex; gap:14px; flex-wrap:wrap; margin-bottom:18px; }
+  .stat-card{ background:var(--surface-1); border:1px solid var(--border); border-radius:14px; padding:14px 20px; min-width:180px; }
+  .stat-card .lbl{ font-size:12px; font-weight:800; color:var(--muted); }
+  .stat-card .val{ font-size:32px; font-weight:800; color:var(--blue-deep); font-variant-numeric:tabular-nums; }
+  .stat-card .val .u{ font-size:14px; color:var(--text-secondary); margin-left:4px; }
+  .warn-box{ background:#fff6e6; border:1px solid #f0d38a; color:var(--amber); font-size:13px; font-weight:700; padding:10px 14px; border-radius:10px; margin-bottom:14px; }
+  .section-ttl{ font-size:15px; font-weight:800; color:var(--text-primary); margin:22px 0 8px; }
+  table.progress-tbl{ width:100%; border-collapse:collapse; background:var(--surface-1); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  table.progress-tbl th, table.progress-tbl td{ padding:10px 12px; border-bottom:1px solid var(--border); font-size:14px; text-align:left; }
+  table.progress-tbl th{ background:var(--surface-0); color:var(--text-secondary); font-weight:800; font-size:12px; }
+  table.progress-tbl td.val{ text-align:right; font-variant-numeric:tabular-nums; font-weight:700; }
+  table.progress-tbl tr:last-child td{ border-bottom:none; }
+  .test-row input{ width:90px; font-family:inherit; font-size:15px; text-align:right; padding:6px 8px; border:1px solid var(--grid); border-radius:6px; }
+  .test-row .diff{ font-size:12px; color:var(--muted); margin-left:8px; }
+  .save-bar{ display:flex; align-items:center; gap:12px; margin-top:14px; }
+  .save-bar button{ appearance:none; cursor:pointer; font-family:inherit; font-size:14px; font-weight:800; border:none; background:var(--blue); color:#fff; padding:10px 20px; border-radius:20px; }
+  .save-bar button:active{ transform:scale(0.97); }
+  .save-bar .msg{ font-size:13px; font-weight:700; color:var(--muted); }
+  .empty-note{ font-size:13px; color:var(--muted); padding:16px 4px; }
+
+  /* ===== 生産者タブ（センター電子黒板から移植・簡略版） ===== */
+  .seisan-wrap{ padding:0; }
+  .seisan-head{ display:flex; align-items:center; gap:16px; flex-wrap:wrap; margin-bottom:14px; }
+  .seisan-head .ttl{ font-size:17px; font-weight:800; color:var(--text-primary); }
+  .seisan-head .seisan-date{ font-size:13px; font-weight:700; color:var(--blue-deep); }
+  .seisan-head .seisan-status{ font-size:12px; font-weight:700; color:var(--muted); }
+  .seisan-head .seisan-total{ margin-left:auto; font-size:14px; font-weight:700; color:var(--text-secondary); }
+  .seisan-head .seisan-total b{ font-size:22px; font-weight:800; color:var(--blue-deep); font-variant-numeric:tabular-nums; margin:0 3px; }
+  .seisan-add{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--surface-1); border:1px solid var(--border); border-radius:12px; padding:12px 16px; margin-bottom:14px; }
+  .seisan-add .lbl{ font-size:13px; font-weight:800; color:var(--text-secondary); }
+  .seisan-input{ font-family:inherit; font-size:15px; padding:8px 11px; border:1px solid var(--grid); border-radius:8px; min-width:200px; }
+  .seisan-ampm-pick{ display:flex; gap:0; }
+  .seisan-ampm-pick .sa-btn{ appearance:none; cursor:pointer; font-family:inherit; font-size:13px; font-weight:800; border:1px solid var(--grid); background:#fff; color:var(--text-secondary); padding:8px 14px; }
+  .seisan-ampm-pick .sa-btn:first-child{ border-radius:8px 0 0 8px; }
+  .seisan-ampm-pick .sa-btn:last-child{ border-radius:0 8px 8px 0; border-left:none; }
+  .seisan-ampm-pick .sa-btn.sel{ background:var(--blue-deep); border-color:var(--blue-deep); color:#fff; }
+  .seisan-btn{ appearance:none; cursor:pointer; font-family:inherit; font-size:13px; font-weight:800; border:none; background:var(--blue); color:#fff; padding:9px 16px; border-radius:20px; }
+  .seisan-btn:active{ transform:scale(0.97); }
+  .seisan-namebtns{ display:flex; gap:8px; flex-wrap:wrap; }
+  .seisan-namebtns .name-btn{ appearance:none; cursor:pointer; font-family:inherit; font-size:14px; font-weight:800; border:1.5px solid var(--blue); background:#fff; color:var(--blue-deep); padding:8px 16px; border-radius:20px; }
+  .seisan-namebtns .name-btn:active{ transform:scale(0.96); background:var(--blue); color:#fff; }
+  .seisan-list{ display:grid; grid-template-columns:repeat(auto-fill, minmax(300px,1fr)); gap:14px; }
+  .seisan-card{ background:var(--surface-1); border:1px solid var(--border); border-radius:14px; padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
+  .seisan-card .top{ display:flex; align-items:center; gap:10px; }
+  .seisan-card .nm{ font-size:17px; font-weight:800; color:var(--text-primary); word-break:break-all; }
+  .seisan-card .del{ margin-left:auto; appearance:none; cursor:pointer; border:none; background:transparent; color:var(--muted); font-size:18px; line-height:1; padding:2px 4px; }
+  .seisan-card .del:hover{ color:var(--red); }
+  .seisan-ampm-toggle{ display:flex; gap:0; margin-left:6px; }
+  .seisan-ampm-toggle .sa2{ appearance:none; cursor:pointer; font-family:inherit; font-size:11px; font-weight:800; border:1px solid var(--grid); background:#fff; color:var(--text-secondary); padding:4px 10px; }
+  .seisan-ampm-toggle .sa2:first-child{ border-radius:8px 0 0 8px; }
+  .seisan-ampm-toggle .sa2:last-child{ border-radius:0 8px 8px 0; border-left:none; }
+  .seisan-ampm-toggle .sa2.sel{ background:var(--blue-deep); border-color:var(--blue-deep); color:#fff; }
+  .seisan-funes-row{ display:flex; align-items:center; gap:8px; background:#eef4fb; border:1px solid var(--border); border-radius:10px; padding:8px 12px; }
+  .seisan-funes-row .fl{ font-size:13px; font-weight:800; color:var(--blue-deep); }
+  .seisan-funes-row .seisan-funes-input{ width:60px; font-family:inherit; font-size:16px; font-weight:800; text-align:right; padding:5px 8px; border:1px solid var(--grid); border-radius:7px; }
+  .seisan-funes-row .fu{ font-size:12px; font-weight:800; color:var(--text-secondary); }
+  .seisan-grid{ display:grid; grid-template-columns:1fr 1fr; gap:6px 12px; }
+  .seisan-grp-h{ grid-column:1/-1; font-size:11px; font-weight:800; color:var(--muted); border-bottom:1px dashed var(--grid); padding-bottom:2px; margin-top:2px; }
+  .seisan-size{ display:flex; align-items:center; gap:6px; }
+  .seisan-size .sz{ font-size:12px; font-weight:800; color:var(--text-secondary); width:44px; text-align:right; }
+  .seisan-size input{ width:52px; font-family:inherit; font-size:15px; font-weight:800; text-align:right; padding:4px 6px; border:1px solid var(--grid); border-radius:6px; }
+  .seisan-size .u{ font-size:11px; font-weight:700; color:var(--muted); }
+  .seisan-size .kg{ font-size:11px; font-weight:800; color:var(--blue-deep); margin-left:auto; }
+  .seisan-card .cardtot{ display:flex; justify-content:flex-end; gap:12px; border-top:1px solid var(--grid); padding-top:8px; font-size:12px; font-weight:700; color:var(--text-secondary); }
+  .seisan-card .cardtot b{ font-size:16px; font-weight:800; color:var(--blue-deep); margin-left:3px; }
+  .seisan-empty{ font-size:13px; color:var(--muted); padding:18px 4px; }
+  .seisan-list:not(:empty) + .seisan-empty{ display:none; }
+  .seisan-hint{ margin-top:16px; font-size:12px; color:var(--muted); line-height:1.6; }
+
+  @media (max-width:760px){
+    .view{ padding:14px; }
+    .seisan-list{ grid-template-columns:1fr; }
+    .seisan-input{ width:100%; min-width:0; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>🌾 広島 電子黒板</h1>
+  <div class="clock" id="clock"></div>
+  <div class="status" id="status">起動中…</div>
+</header>
+<nav class="tabs">
+  <button class="tab sel" id="tab-progress" onclick="switchView('progress')">📋 本日進捗</button>
+  <button class="tab" id="tab-seisan" onclick="switchView('seisan')">🧑‍🌾 生産者</button>
+</nav>
+
+<!-- ===== 本日進捗タブ ===== -->
+<div id="view-progress" class="view show">
+  <div class="warn-box">
+    模索段階：ここに出る数字は発注書スプレッドシートの「進捗」「発注書」シートを<b>読み取り専用</b>で表示しているだけです。
+    下の「テスト入力」で保存した値は、専用の別スプレッドシート「【広島】電子黒板データ」にのみ記録され、
+    発注書スプレッドシートには一切書き込みません。
+  </div>
+
+  <div class="stat-row" id="funes-stats"></div>
+
+  <div class="section-ttl">進捗シートの現在値（<span id="progress-date"></span>）</div>
+  <table class="progress-tbl" id="progress-table">
+    <thead><tr><th>項目（列見出し）</th><th style="text-align:right;">進捗シートの値</th><th style="text-align:right;">テスト入力</th></tr></thead>
+    <tbody id="progress-tbody"></tbody>
+  </table>
+  <div class="empty-note" id="progress-empty" style="display:none;">該当する列が見つかりませんでした。GASの <code>?type=debug</code> で見出し検出結果を確認してください。</div>
+
+  <div class="save-bar">
+    <button onclick="progressTestSave()">テスト入力を保存</button>
+    <span class="msg" id="progress-save-msg"></span>
+  </div>
+</div>
+
+<!-- ===== 生産者タブ ===== -->
+<div id="view-seisan" class="view">
+  <div class="seisan-wrap">
+    <div class="seisan-head">
+      <div class="ttl">🧑‍🌾 生産者　持ち込み量・出来高の記録　<span id="seisan-date-label" class="seisan-date"></span></div>
+      <div class="seisan-status" id="seisan-status"></div>
+      <div class="seisan-total">本日合計　合計 <b id="seisan-total-kg">0</b>kg ／ C <b id="seisan-total-c">0</b>kg ／ S <b id="seisan-total-s">0</b>kg　<span style="font-size:11px;color:var(--muted);font-weight:700;">（<b id="seisan-total-funes">0</b> c/s）</span></div>
+    </div>
+    <div class="seisan-add">
+      <span class="lbl">生産者を追加：</span>
+      <input id="seisan-newname" class="seisan-input" type="text" placeholder="生産者名を入力してEnter" onkeydown="if(event.key==='Enter')seisanAdd();">
+      <button class="seisan-btn" onclick="seisanAdd()">＋ 生産者を追加</button>
+      <div class="seisan-ampm-pick">
+        <button type="button" class="sa-btn sel" data-ampm="AM" onclick="seisanPickAmpm('AM')">午前</button>
+        <button type="button" class="sa-btn" data-ampm="PM" onclick="seisanPickAmpm('PM')">午後</button>
+      </div>
+      <div class="seisan-namebtns" id="seisan-namebtns"></div>
+    </div>
+    <div id="seisan-list" class="seisan-list"></div>
+    <div class="seisan-empty" id="seisan-empty">まだ生産者が登録されていません。上の欄に生産者名を入れて「＋ 生産者を追加」を押してください。</div>
+    <div class="seisan-hint">保存先：専用スプレッドシート「【広島】電子黒板データ」内の「生産者記録」シート（発注書スプレッドシートには書き込みません）。</div>
+  </div>
+</div>
+
+<script>
+  /* ★デプロイ後、Apps ScriptのWebアプリURLをここに貼る */
+  const GAS_URL = 'ここにGASのWebアプリURLを貼る（例: https://script.google.com/macros/s/xxxx/exec）';
+
+  function jsonp_(url, cb){
+    var name = 'cb_' + Date.now() + '_' + Math.floor(Math.random()*1e6);
+    var timer = setTimeout(function(){ if(window[name]){ delete window[name]; cb(null, 'timeout'); } }, 12000);
+    window[name] = function(data){ clearTimeout(timer); delete window[name]; cb(data, null); };
+    var s = document.createElement('script');
+    s.src = url + (url.indexOf('?')>=0?'&':'?') + 'callback=' + name;
+    s.onerror = function(){ clearTimeout(timer); delete window[name]; cb(null, 'network'); s.remove(); };
+    document.body.appendChild(s);
+  }
+  function gasGet_(type, params, cb){
+    if(!GAS_URL || GAS_URL.indexOf('http') !== 0){ cb(null, 'GAS_URLが未設定です'); return; }
+    var qs = 'type=' + encodeURIComponent(type);
+    Object.keys(params||{}).forEach(function(k){ qs += '&' + k + '=' + encodeURIComponent(params[k]); });
+    jsonp_(GAS_URL + '?' + qs, cb);
+  }
+  function gasPost_(action, body, cb){
+    if(!GAS_URL || GAS_URL.indexOf('http') !== 0){ cb(null, 'GAS_URLが未設定です'); return; }
+    fetch(GAS_URL, { method:'POST', body: JSON.stringify(Object.assign({action:action}, body)) })
+      .then(function(r){ return r.json(); })
+      .then(function(d){ cb(d, null); })
+      .catch(function(e){ cb(null, String(e)); });
+  }
+
+  function switchView(name){
+    document.querySelectorAll('.view').forEach(function(v){ v.classList.remove('show'); });
+    document.querySelectorAll('nav.tabs .tab').forEach(function(b){ b.classList.remove('sel'); });
+    document.getElementById('view-' + name).classList.add('show');
+    document.getElementById('tab-' + name).classList.add('sel');
+    if(name === 'seisan') seisanOnOpen();
+  }
+
+  function tickClock(){
+    var t = new Date();
+    document.getElementById('clock').textContent = t.toLocaleDateString('ja-JP',{month:'numeric',day:'numeric',weekday:'short'}) + ' ' + ('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2);
+  }
+  setInterval(tickClock, 1000*10); tickClock();
+
+  /* ===== 本日進捗タブ ===== */
+  var PROGRESS_TEST_LOCAL = {};   // 直前に読み込んだテスト入力値（{label: value}）
+  var PROGRESS_COLUMNS = [];
+
+  function renderFunes_(data){
+    var box = document.getElementById('funes-stats');
+    if(!data || data.error){ box.innerHTML = '<div class="stat-card"><div class="lbl">収穫舟数</div><div class="val">―</div></div>'; return; }
+    if(!data.matches || !data.matches.length){ box.innerHTML = '<div class="stat-card"><div class="lbl">収穫舟数</div><div class="val">―</div></div>'; return; }
+    var html = '';
+    data.matches.forEach(function(m){
+      html += '<div class="stat-card"><div class="lbl">' + escHtml_(m.label) + '</div><div class="val">' + escHtml_(String(m.value || 0)) + '<span class="u">舟</span></div></div>';
+    });
+    if(data.matches.length > 1){
+      html += '<div class="warn-box" style="flex-basis:100%;">「収穫舟数」に該当する列が' + data.matches.length + '件見つかりました。発注書シートに似た表が複数ある可能性があります。debugエンドポイントで確認してください。</div>';
+    }
+    box.innerHTML = html;
+  }
+
+  function renderProgress_(data){
+    document.getElementById('progress-date').textContent = (data && data.date) || '';
+    var tbody = document.getElementById('progress-tbody');
+    var empty = document.getElementById('progress-empty');
+    if(!data || data.error || !data.columns || !data.columns.length){
+      tbody.innerHTML = ''; empty.style.display = 'block'; PROGRESS_COLUMNS = [];
+      return;
+    }
+    empty.style.display = 'none';
+    PROGRESS_COLUMNS = data.columns;
+    tbody.innerHTML = data.columns.map(function(col, i){
+      var testVal = PROGRESS_TEST_LOCAL[col.label];
+      return '<tr>' +
+        '<td>' + escHtml_(col.label) + '</td>' +
+        '<td class="val">' + escHtml_(String(col.value === '' ? '―' : col.value)) + '</td>' +
+        '<td class="val test-row"><input type="number" step="any" id="test-in-' + i + '" data-label="' + escAttr_(col.label) + '" value="' + (testVal != null ? escAttr_(testVal) : '') + '"></td>' +
+      '</tr>';
+    }).join('');
+  }
+
+  function renderProgressTest_(data){
+    PROGRESS_TEST_LOCAL = (data && data.entries) || {};
+    var msg = document.getElementById('progress-save-msg');
+    if(data && data.savedAt){ msg.textContent = '前回保存：' + data.savedAt + (data.by ? '（' + data.by + '）' : ''); }
+    renderProgress_({ date: document.getElementById('progress-date').textContent, columns: PROGRESS_COLUMNS });
+  }
+
+  function progressTestSave(){
+    var entries = {};
+    document.querySelectorAll('#progress-tbody input').forEach(function(inp){
+      var v = inp.value;
+      if(v !== '') entries[inp.getAttribute('data-label')] = Number(v);
+    });
+    var msg = document.getElementById('progress-save-msg');
+    msg.textContent = '保存中…';
+    gasPost_('progressTestSave', { date: todayStr_(), entries: entries, by: deviceLabel_() }, function(data, err){
+      if(err || !data || !data.ok){ msg.textContent = '保存に失敗しました：' + (err || (data && data.error) || ''); return; }
+      msg.textContent = '保存しました（' + data.savedAt + '）';
+    });
+  }
+
+  function loadBundle_(){
+    document.getElementById('status').textContent = '読み込み中…';
+    gasGet_('bundle', { date: todayStr_() }, function(data, err){
+      if(err || !data){ document.getElementById('status').textContent = '🟡 通信エラー：' + (err || ''); return; }
+      if(data.funes) renderFunes_(data.funes);
+      if(data.progress) renderProgress_(data.progress);
+      if(data.progressTest) renderProgressTest_(data.progressTest);
+      document.getElementById('status').textContent = '🟢 最終更新 ' + new Date().toLocaleTimeString('ja-JP');
+    });
+  }
+  function todayStr_(){ var t=new Date(); return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0'); }
+  function deviceLabel_(){ try{ return (navigator.platform||'PC')+'/'+(screen.width||'')+'x'+(screen.height||''); }catch(e){ return 'PC'; } }
+  function escHtml_(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+  function escAttr_(s){ return escHtml_(s); }
+
+  loadBundle_();
+  setInterval(loadBundle_, 30000);
+
+  /* ===== 生産者タブ（センター電子黒板の生産者タブを簡略移植） ===== */
+  var SEISAN = { date:'', list:[] };
+  var SEISAN_AMPM = 'AM';
+  var SEISAN_NAMES = ['樋ノ口'];   // 分かっている生産者名（他は自由入力で追加できる）
+  var SEISAN_SIZES = [
+    { grp:'洗い', kg:3.34, label:'3.34㎏', cat:'main' },
+    { grp:'洗い', kg:2,    label:'2㎏',   cat:'main' },
+    { grp:'洗い', kg:5,    label:'5㎏',   cat:'main' },
+    { grp:'洗い', kg:10,   label:'10㎏',  cat:'main' },
+    { grp:'洗い', key:'洗い半端|1', label:'半端', kg:1, kgDirect:true, cat:'main' },
+    { grp:'土',   kg:2,    label:'2㎏',   cat:'main' },
+    { grp:'土',   kg:5,    label:'5㎏',   cat:'main' },
+    { grp:'土',   kg:10,   label:'10㎏',  cat:'main' },
+    { grp:'土',   key:'土半端|1', label:'半端', kg:1, kgDirect:true, cat:'main' },
+    { grp:'CS', label:'C', key:'C|1', kg:1, kgDirect:true, cat:'C' },
+    { grp:'CS', label:'S', key:'S|1', kg:1, kgDirect:true, cat:'S' }
+  ];
+  function seisanSizeKey(s){ return s.key || (s.grp + '|' + s.kg); }
+  function seisanTodayStr(){ return todayStr_(); }
+  function seisanLocalKey(){ return 'hb_seisan_' + SEISAN.date; }
+  function seisanLoadLocal(){ try{ var o=JSON.parse(localStorage.getItem(seisanLocalKey())); if(o&&Array.isArray(o.list)) SEISAN.list=o.list; }catch(e){} }
+  function seisanSaveLocal(){ try{ localStorage.setItem(seisanLocalKey(), JSON.stringify({list:SEISAN.list})); }catch(e){} }
+  function seisanSetStatus(txt,color){ var e=document.getElementById('seisan-status'); if(e){ e.textContent=txt; e.style.color=color||'var(--muted)'; } }
+  function seisanFmtKg(n){ return (Math.round(n*10)/10).toLocaleString('ja-JP'); }
+
+  var seisanInited=false;
+  function seisanInit(){
+    if(seisanInited) return; seisanInited=true;
+    SEISAN.date = seisanTodayStr();
+    var lbl=document.getElementById('seisan-date-label'); if(lbl) lbl.textContent='（'+SEISAN.date+'）';
+    seisanRenderNameBtns();
+    seisanLoadLocal();
+    seisanLoadLive();
+  }
+  function seisanOnOpen(){ seisanInit(); seisanRender(); }
+
+  function seisanRenderNameBtns(){
+    var box=document.getElementById('seisan-namebtns'); if(!box) return;
+    box.innerHTML='';
+    SEISAN_NAMES.forEach(function(nm){
+      var b=document.createElement('button'); b.type='button'; b.className='name-btn'; b.textContent=nm;
+      b.onclick=function(){ seisanAddName(nm); };
+      box.appendChild(b);
+    });
+  }
+  function seisanAddName(nm){
+    for(var j=0;j<SEISAN.list.length;j++){
+      if(SEISAN.list[j].name===nm && SEISAN.list[j].ampm===SEISAN_AMPM){
+        seisanSetStatus('「'+nm+'（'+(SEISAN_AMPM==='PM'?'午後':'午前')+'）」は既に登録済みです','#a76a00');
+        return;
+      }
+    }
+    SEISAN.list.push({ name:nm, ampm:SEISAN_AMPM, rows:{} });
+    seisanRender(); seisanPushSave();
+  }
+  function seisanPickAmpm(v){
+    SEISAN_AMPM = (v==='PM'?'PM':'AM');
+    document.querySelectorAll('.seisan-ampm-pick .sa-btn').forEach(function(b){ b.classList.toggle('sel', b.getAttribute('data-ampm')===SEISAN_AMPM); });
+  }
+  function seisanAdd(){
+    var inp=document.getElementById('seisan-newname'); if(!inp) return;
+    var nm=(inp.value||'').trim(); if(!nm) return;
+    SEISAN.list.push({ name:nm, ampm:SEISAN_AMPM, rows:{} });
+    inp.value=''; inp.focus();
+    seisanRender(); seisanPushSave();
+  }
+  function seisanFunesOf(p){ var s=0; SEISAN_SIZES.forEach(function(sz){ if(sz.kgDirect) return; s += Number(p.rows[seisanSizeKey(sz)])||0; }); return s; }
+  function seisanKgSplit(p){
+    var o={ main:0, C:0, S:0 };
+    SEISAN_SIZES.forEach(function(sz){
+      var v=Number(p.rows[seisanSizeKey(sz)])||0; if(!v) return;
+      var kg = sz.kgDirect ? v : v*sz.kg;
+      if(sz.cat==='C') o.C+=kg; else if(sz.cat==='S') o.S+=kg; else o.main+=kg;
+    });
+    return o;
+  }
+  function seisanKgOf(p){ var o=seisanKgSplit(p); return o.main+o.C+o.S; }
+  function seisanDel(i){
+    SEISAN.list.splice(i,1);
+    seisanRender(); seisanPushSave();
+  }
+  function seisanSetCell(i, key, val){
+    var p=SEISAN.list[i]; if(!p) return;
+    var n=Number(val)||0;
+    if(n>0) p.rows[key]=n; else delete p.rows[key];
+    seisanRenderTotals();
+    seisanPushSave();
+  }
+  function seisanSetFunes(i, val){
+    var p=SEISAN.list[i]; if(!p) return;
+    p.funes = Number(val)||0;
+    seisanPushSave();
+  }
+  function seisanSetAmpm(i, v){
+    var p=SEISAN.list[i]; if(!p) return;
+    var nx=(v==='PM'?'PM':'AM');
+    for(var j=0;j<SEISAN.list.length;j++){ if(j!==i && SEISAN.list[j].name===p.name && SEISAN.list[j].ampm===nx){ seisanSetStatus('「'+p.name+'（'+(nx==='PM'?'午後':'午前')+'）」は既に登録済みです','#a76a00'); return; } }
+    p.ampm=nx; seisanRender(); seisanPushSave();
+  }
+  function seisanTotalFunes(){ var s=0; (SEISAN.list||[]).forEach(function(p){ s+=Number(p.funes)||0; }); return s; }
+
+  function seisanRenderTotals(){
+    var Tmain=0,Tc=0,Ts=0,Tcs=0;
+    SEISAN.list.forEach(function(p){ var o=seisanKgSplit(p); Tmain+=o.main; Tc+=o.C; Ts+=o.S; Tcs+=seisanFunesOf(p); });
+    function set(id,v){ var e=document.getElementById(id); if(e) e.textContent=v; }
+    set('seisan-total-kg', seisanFmtKg(Tmain));
+    set('seisan-total-c',  seisanFmtKg(Tc));
+    set('seisan-total-s',  seisanFmtKg(Ts));
+    set('seisan-total-funes', Tcs.toLocaleString('ja-JP'));
+  }
+
+  function seisanRender(){
+    var wrap=document.getElementById('seisan-list'); if(!wrap) return;
+    var html='';
+    SEISAN.list.forEach(function(p,i){
+      html+='<div class="seisan-card">';
+      html+='<div class="top"><span class="nm">'+escHtml_(p.name)+'</span>'+
+        '<span class="seisan-ampm-toggle">'+
+          '<button type="button" class="sa2'+(p.ampm==='AM'?' sel':'')+'" data-ampm="AM" onclick="seisanSetAmpm('+i+',\'AM\')">午前</button>'+
+          '<button type="button" class="sa2'+(p.ampm==='PM'?' sel':'')+'" data-ampm="PM" onclick="seisanSetAmpm('+i+',\'PM\')">午後</button>'+
+        '</span>'+
+        '<button class="del" onclick="seisanDel('+i+')">✕</button></div>';
+      html+='<div class="seisan-funes-row"><span class="fl">🚢 収穫舟数</span>'+
+        '<input class="seisan-funes-input" type="number" min="0" step="1" inputmode="numeric" value="'+(Number(p.funes)||'')+'" onchange="seisanSetFunes('+i+',this.value)" placeholder="0"><span class="fu">舟</span></div>';
+      html+='<div class="seisan-grid">';
+      var lastGrp=null;
+      SEISAN_SIZES.forEach(function(sz){
+        if(sz.grp!==lastGrp){ html+='<div class="seisan-grp-h">'+(sz.grp==='土'?'土付き':(sz.grp==='CS'?'C・S（㎏で直接入力）':sz.grp))+'</div>'; lastGrp=sz.grp; }
+        var key=seisanSizeKey(sz); var f=Number(p.rows[key])||0;
+        html+='<div class="seisan-size"><span class="sz">'+sz.label+'</span>'+
+              '<input type="number" min="0" step="any" value="'+(f||'')+'" onchange="seisanSetCell('+i+',\''+key+'\',this.value)"><span class="u">'+(sz.kgDirect?'㎏':'c/s')+'</span>'+
+              '<span class="kg">'+(f && !sz.kgDirect ? seisanFmtKg(f*sz.kg)+'kg' : '')+'</span></div>';
+      });
+      html+='</div>';
+      var _sp=seisanKgSplit(p);
+      html+='<div class="cardtot">c/s <b>'+seisanFunesOf(p)+'</b>　合計 <b>'+seisanFmtKg(_sp.main)+'</b>kg ／ C <b>'+seisanFmtKg(_sp.C)+'</b>kg ／ S <b>'+seisanFmtKg(_sp.S)+'</b>kg</div>';
+      html+='</div>';
+    });
+    wrap.innerHTML=html;
+    seisanRenderTotals();
+    var empty=document.getElementById('seisan-empty'); if(empty) empty.style.display=SEISAN.list.length?'none':'block';
+  }
+
+  var _seisanDirty=false;
+  function seisanApplyLive_(data){
+    if(!data || data.error || data.date!==SEISAN.date) return false;
+    SEISAN.list = data.list || [];
+    seisanSaveLocal(); seisanRender();
+    var t=new Date(); seisanSetStatus('🟢 保存済み '+('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2),'var(--green)');
+    return true;
+  }
+  function seisanLoadLive(){
+    if(!GAS_URL || GAS_URL.indexOf('http')!==0){ seisanSetStatus('ローカル保存のみ（GAS_URL未設定）','var(--muted)'); seisanRender(); return; }
+    seisanSetStatus('読み込み中…','var(--muted)');
+    gasGet_('seisanGet', { date: SEISAN.date }, function(data, err){
+      if(err || !seisanApplyLive_(data)){
+        if(SEISAN.list && SEISAN.list.length){ seisanSetStatus('🟢 接続OK（ローカル入力分を保存中…）','var(--green)'); seisanRender(); seisanPushSave(); }
+        else { seisanSetStatus(err ? ('🟡 通信失敗（ローカル表示）') : '🟢 保存先に接続OK', err?'#a76a00':'var(--green)'); seisanRender(); }
+      }
+    });
+  }
+  var seisanSaveTimer=null;
+  function seisanPushSave(){
+    seisanSaveLocal();
+    if(!GAS_URL || GAS_URL.indexOf('http')!==0){ seisanSetStatus('ローカル保存のみ（GAS_URL未設定）','var(--muted)'); return; }
+    if(seisanSaveTimer) clearTimeout(seisanSaveTimer);
+    _seisanDirty=true;
+    seisanSetStatus('保存中…','var(--muted)');
+    seisanSaveTimer=setTimeout(function(){
+      gasPost_('seisanSave', { date:SEISAN.date, list:SEISAN.list }, function(d, err){
+        if(d && d.ok){ _seisanDirty=false; var t=new Date(); seisanSetStatus('🟢 保存済み '+('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2),'var(--green)'); }
+        else { seisanSetStatus('🟡 保存エラー（ローカルには保持）','#a76a00'); }
+      });
+    }, 700);
+  }
+</script>
+</body>
+</html>
