@@ -113,9 +113,7 @@
 <!-- ===== 本日進捗タブ ===== -->
 <div id="view-progress" class="view show">
   <div class="warn-box">
-    模索段階：ここに出る数字は発注書スプレッドシートの「進捗」「発注書」シートを<b>読み取り専用</b>で表示しているだけです。
-    下の「テスト入力」で保存した値は、専用の別スプレッドシート「【広島】電子黒板データ」にのみ記録され、
-    発注書スプレッドシートには一切書き込みません。
+    模索段階：ここに出る数字は発注書スプレッドシートの「進捗」「発注書」シートを<b>読み取り専用</b>で表示しているだけです。発注書スプレッドシートには一切書き込みません。
   </div>
 
   <div class="stat-row" id="main-stats"></div>
@@ -130,18 +128,6 @@
   <div class="section-ttl">🧰 資材の要確認</div>
   <div id="shizai-alerts-box" class="warn-box" style="display:none;"></div>
   <div class="empty-note" id="shizai-alerts-empty">現在、しきい値を下回っている資材はありません（しきい値方式のみの簡易チェックです。定期チェック等は資材管理アプリでご確認ください）。</div>
-
-  <div class="section-ttl">進捗シートの現在値（<span id="progress-date"></span>）</div>
-  <table class="progress-tbl" id="progress-table">
-    <thead><tr><th>項目（列見出し）</th><th style="text-align:right;">進捗シートの値</th><th style="text-align:right;">テスト入力</th></tr></thead>
-    <tbody id="progress-tbody"></tbody>
-  </table>
-  <div class="empty-note" id="progress-empty" style="display:none;">該当する列が見つかりませんでした。GASの <code>?type=debug</code> で見出し検出結果を確認してください。</div>
-
-  <div class="save-bar">
-    <button onclick="progressTestSave()">テスト入力を保存</button>
-    <span class="msg" id="progress-save-msg"></span>
-  </div>
 </div>
 
 <!-- ===== 生産者タブ ===== -->
@@ -209,10 +195,7 @@
   }
   setInterval(tickClock, 1000*10); tickClock();
 
-  /* ===== 本日進捗タブ ===== */
-  var PROGRESS_TEST_LOCAL = {};   // 直前に読み込んだテスト入力値（{label: value}）
-  var PROGRESS_COLUMNS = [];
-
+  /* ===== 本日荷造りタブ ===== */
   var LAST_FUNES = null, LAST_MAINSTATS = null, LAST_NIZUKURI = null;
 
   // ①②③ 本日の状況（収穫舟数・荷造り舟数・荷造り予定㎏・テスト実績㎏合計）をまとめて表示
@@ -242,13 +225,6 @@
     if(LAST_NIZUKURI && !LAST_NIZUKURI.error){
       cards.push({ lbl: '荷造り予定㎏（本日注文合計）', val: LAST_NIZUKURI.totalKg || 0, u: 'kg' });
     }
-
-    // ③ テスト実績㎏合計（「荷造数」欄にこれまで入力したテスト値の合計。本番の実績記録ではありません）
-    var testTotal = 0, hasTest = false;
-    Object.keys(PROGRESS_TEST_LOCAL || {}).forEach(function(k){
-      if(k.indexOf('荷造数') >= 0){ testTotal += Number(PROGRESS_TEST_LOCAL[k]) || 0; hasTest = true; }
-    });
-    cards.push({ lbl: 'テスト実績合計（進捗シートの荷造数欄・試験入力分）', val: hasTest ? testTotal : '―' });
 
     box.innerHTML = cards.map(function(c){
       if(c.warn) return '<div class="warn-box" style="flex-basis:100%;">' + escHtml_(c.warn) + '</div>';
@@ -293,50 +269,6 @@
     }).join('<br>');
   }
 
-  function renderProgress_(data){
-    document.getElementById('progress-date').textContent = (data && data.date) || '';
-    var tbody = document.getElementById('progress-tbody');
-    var empty = document.getElementById('progress-empty');
-    if(!data || data.error || !data.columns || !data.columns.length){
-      tbody.innerHTML = ''; empty.style.display = 'block'; PROGRESS_COLUMNS = [];
-      return;
-    }
-    empty.style.display = 'none';
-    PROGRESS_COLUMNS = data.columns;
-    tbody.innerHTML = data.columns.map(function(col, i){
-      var testVal = PROGRESS_TEST_LOCAL[col.label];
-      return '<tr>' +
-        '<td>' + escHtml_(col.label) + '</td>' +
-        '<td class="val">' + escHtml_(String(col.value === '' ? '―' : col.value)) + '</td>' +
-        '<td class="val test-row"><input type="number" step="any" id="test-in-' + i + '" data-label="' + escAttr_(col.label) + '" value="' + (testVal != null ? escAttr_(testVal) : '') + '"></td>' +
-      '</tr>';
-    }).join('');
-  }
-
-  function renderProgressTest_(data){
-    PROGRESS_TEST_LOCAL = (data && data.entries) || {};
-    var msg = document.getElementById('progress-save-msg');
-    if(data && data.savedAt){ msg.textContent = '前回保存：' + data.savedAt + (data.by ? '（' + data.by + '）' : ''); }
-    renderProgress_({ date: document.getElementById('progress-date').textContent, columns: PROGRESS_COLUMNS });
-    renderMainStats_();
-  }
-
-  function progressTestSave(){
-    var entries = {};
-    document.querySelectorAll('#progress-tbody input').forEach(function(inp){
-      var v = inp.value;
-      if(v !== '') entries[inp.getAttribute('data-label')] = Number(v);
-    });
-    var msg = document.getElementById('progress-save-msg');
-    msg.textContent = '保存中…';
-    gasPost_('progressTestSave', { date: todayStr_(), entries: entries, by: deviceLabel_() }, function(data, err){
-      if(err || !data || !data.ok){ msg.textContent = '保存に失敗しました：' + (err || (data && data.error) || ''); return; }
-      msg.textContent = '保存しました（' + data.savedAt + '）';
-      PROGRESS_TEST_LOCAL = entries;
-      renderMainStats_();
-    });
-  }
-
   function loadBundle_(){
     document.getElementById('status').textContent = '読み込み中…';
     gasGet_('bundle', { date: todayStr_() }, function(data, err){
@@ -344,9 +276,7 @@
       if(data.funes)     LAST_FUNES = data.funes;
       if(data.mainStats) LAST_MAINSTATS = data.mainStats;
       if(data.nizukuri)  renderNizukuri_(data.nizukuri);
-      if(data.progress)  renderProgress_(data.progress);
-      if(data.progressTest) renderProgressTest_(data.progressTest);   // ここでrenderMainStats_も呼ばれる
-      else renderMainStats_();
+      renderMainStats_();
       if(data.shizaiAlerts) renderShizaiAlerts_(data.shizaiAlerts);
       document.getElementById('status').textContent = '🟢 最終更新 ' + new Date().toLocaleTimeString('ja-JP');
     });
