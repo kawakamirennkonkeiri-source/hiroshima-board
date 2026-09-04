@@ -106,7 +106,7 @@
   <div class="status" id="status">起動中…</div>
 </header>
 <nav class="tabs">
-  <button class="tab sel" id="tab-progress" onclick="switchView('progress')">📋 本日進捗</button>
+  <button class="tab sel" id="tab-progress" onclick="switchView('progress')">📋 本日荷造り</button>
   <button class="tab" id="tab-seisan" onclick="switchView('seisan')">🧑‍🌾 生産者</button>
 </nav>
 
@@ -118,7 +118,18 @@
     発注書スプレッドシートには一切書き込みません。
   </div>
 
-  <div class="stat-row" id="funes-stats"></div>
+  <div class="stat-row" id="main-stats"></div>
+
+  <div class="section-ttl">📦 本日の注文一覧（発注書シートより・<span id="nizukuri-date"></span>）</div>
+  <table class="progress-tbl" id="nizukuri-table">
+    <thead><tr><th>取引先</th><th>区分</th><th style="text-align:right;">入数</th><th style="text-align:right;">数量</th><th style="text-align:right;">kg</th></tr></thead>
+    <tbody id="nizukuri-tbody"></tbody>
+  </table>
+  <div class="empty-note" id="nizukuri-empty" style="display:none;">本日の注文はまだ無いようです（発注書シートに本日の行が見つからない場合も含む）。</div>
+
+  <div class="section-ttl">🧰 資材の要確認</div>
+  <div id="shizai-alerts-box" class="warn-box" style="display:none;"></div>
+  <div class="empty-note" id="shizai-alerts-empty">現在、しきい値を下回っている資材はありません（しきい値方式のみの簡易チェックです。定期チェック等は資材管理アプリでご確認ください）。</div>
 
   <div class="section-ttl">進捗シートの現在値（<span id="progress-date"></span>）</div>
   <table class="progress-tbl" id="progress-table">
@@ -202,18 +213,84 @@
   var PROGRESS_TEST_LOCAL = {};   // 直前に読み込んだテスト入力値（{label: value}）
   var PROGRESS_COLUMNS = [];
 
-  function renderFunes_(data){
-    var box = document.getElementById('funes-stats');
-    if(!data || data.error){ box.innerHTML = '<div class="stat-card"><div class="lbl">収穫舟数</div><div class="val">―</div></div>'; return; }
-    if(!data.matches || !data.matches.length){ box.innerHTML = '<div class="stat-card"><div class="lbl">収穫舟数</div><div class="val">―</div></div>'; return; }
-    var html = '';
-    data.matches.forEach(function(m){
-      html += '<div class="stat-card"><div class="lbl">' + escHtml_(m.label) + '</div><div class="val">' + escHtml_(String(m.value || 0)) + '<span class="u">舟</span></div></div>';
-    });
-    if(data.matches.length > 1){
-      html += '<div class="warn-box" style="flex-basis:100%;">「収穫舟数」に該当する列が' + data.matches.length + '件見つかりました。発注書シートに似た表が複数ある可能性があります。debugエンドポイントで確認してください。</div>';
+  var LAST_FUNES = null, LAST_MAINSTATS = null, LAST_NIZUKURI = null;
+
+  // ①②③ 本日の状況（収穫舟数・荷造り舟数・荷造り予定㎏・テスト実績㎏合計）をまとめて表示
+  function renderMainStats_(){
+    var box = document.getElementById('main-stats');
+    var cards = [];
+
+    // ① 収穫舟数（発注書シートより）
+    if(LAST_FUNES && !LAST_FUNES.error && LAST_FUNES.matches && LAST_FUNES.matches.length){
+      LAST_FUNES.matches.forEach(function(m){
+        cards.push({ lbl: m.label, val: (m.value === '' ? '―' : m.value), u: '舟' });
+      });
+      if(LAST_FUNES.matches.length > 1){
+        cards.push({ warn: '「収穫舟数」に該当する列が' + LAST_FUNES.matches.length + '件見つかりました（発注書シートに似た表が複数ある可能性）' });
+      }
+    } else {
+      cards.push({ lbl: '収穫舟数', val: '―' });
     }
-    box.innerHTML = html;
+
+    // ① 荷造り舟数（発注書シート・取引先名の行の集計列より）
+    if(LAST_MAINSTATS && !LAST_MAINSTATS.error && LAST_MAINSTATS.stats){
+      var s = LAST_MAINSTATS.stats;
+      if('荷造り舟数' in s) cards.push({ lbl: '荷造り舟数', val: (s['荷造り舟数'] === '' ? '―' : s['荷造り舟数']), u: '舟' });
+    }
+
+    // ② 荷造り予定㎏（本日の注文一覧の合計。発注書シートより）
+    if(LAST_NIZUKURI && !LAST_NIZUKURI.error){
+      cards.push({ lbl: '荷造り予定㎏（本日注文合計）', val: LAST_NIZUKURI.totalKg || 0, u: 'kg' });
+    }
+
+    // ③ テスト実績㎏合計（「荷造数」欄にこれまで入力したテスト値の合計。本番の実績記録ではありません）
+    var testTotal = 0, hasTest = false;
+    Object.keys(PROGRESS_TEST_LOCAL || {}).forEach(function(k){
+      if(k.indexOf('荷造数') >= 0){ testTotal += Number(PROGRESS_TEST_LOCAL[k]) || 0; hasTest = true; }
+    });
+    cards.push({ lbl: 'テスト実績合計（進捗シートの荷造数欄・試験入力分）', val: hasTest ? testTotal : '―' });
+
+    box.innerHTML = cards.map(function(c){
+      if(c.warn) return '<div class="warn-box" style="flex-basis:100%;">' + escHtml_(c.warn) + '</div>';
+      return '<div class="stat-card"><div class="lbl">' + escHtml_(c.lbl) + '</div><div class="val">' + escHtml_(String(c.val)) + (c.u ? '<span class="u">' + escHtml_(c.u) + '</span>' : '') + '</div></div>';
+    }).join('');
+  }
+
+  // ⑤ 本日の注文一覧（発注書シートより・取引先ごとの数量とkg）
+  function renderNizukuri_(data){
+    LAST_NIZUKURI = data;
+    document.getElementById('nizukuri-date').textContent = (data && data.date) || '';
+    var tbody = document.getElementById('nizukuri-tbody');
+    var empty = document.getElementById('nizukuri-empty');
+    if(!data || data.error || !data.orders || !data.orders.length){
+      tbody.innerHTML = ''; empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    tbody.innerHTML = data.orders.map(function(o){
+      return '<tr>' +
+        '<td>' + escHtml_(o.cust) + '</td>' +
+        '<td>' + escHtml_(o.kubun || '') + '</td>' +
+        '<td class="val">' + escHtml_(String(o.nyusu)) + (o.unit === 'kg' ? 'kg' : '') + '</td>' +
+        '<td class="val">' + escHtml_(String(o.qty)) + (o.unit === 'kg' ? 'kg' : 'c/s') + '</td>' +
+        '<td class="val">' + escHtml_(String(o.kg)) + '</td>' +
+      '</tr>';
+    }).join('') + '<tr><td colspan="4" style="text-align:right;font-weight:800;">合計</td><td class="val" style="font-weight:800;">' + escHtml_(String(data.totalKg || 0)) + '</td></tr>';
+  }
+
+  // ④ 資材の要確認アラート（しきい値方式のみの簡易版）
+  function renderShizaiAlerts_(data){
+    var box = document.getElementById('shizai-alerts-box');
+    var empty = document.getElementById('shizai-alerts-empty');
+    if(!data || data.error || !data.alerts || !data.alerts.length){
+      box.style.display = 'none'; empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    box.style.display = 'block';
+    box.innerHTML = data.alerts.map(function(a){
+      return '⚠ ' + escHtml_(a.name) + '：残り' + escHtml_(String(a.actual)) + escHtml_(a.unit || '') + '（しきい値' + escHtml_(String(a.thresholdQty)) + escHtml_(a.unit || '') + '以下）';
+    }).join('<br>');
   }
 
   function renderProgress_(data){
@@ -241,6 +318,7 @@
     var msg = document.getElementById('progress-save-msg');
     if(data && data.savedAt){ msg.textContent = '前回保存：' + data.savedAt + (data.by ? '（' + data.by + '）' : ''); }
     renderProgress_({ date: document.getElementById('progress-date').textContent, columns: PROGRESS_COLUMNS });
+    renderMainStats_();
   }
 
   function progressTestSave(){
@@ -254,6 +332,8 @@
     gasPost_('progressTestSave', { date: todayStr_(), entries: entries, by: deviceLabel_() }, function(data, err){
       if(err || !data || !data.ok){ msg.textContent = '保存に失敗しました：' + (err || (data && data.error) || ''); return; }
       msg.textContent = '保存しました（' + data.savedAt + '）';
+      PROGRESS_TEST_LOCAL = entries;
+      renderMainStats_();
     });
   }
 
@@ -261,9 +341,13 @@
     document.getElementById('status').textContent = '読み込み中…';
     gasGet_('bundle', { date: todayStr_() }, function(data, err){
       if(err || !data){ document.getElementById('status').textContent = '🟡 通信エラー：' + (err || ''); return; }
-      if(data.funes) renderFunes_(data.funes);
-      if(data.progress) renderProgress_(data.progress);
-      if(data.progressTest) renderProgressTest_(data.progressTest);
+      if(data.funes)     LAST_FUNES = data.funes;
+      if(data.mainStats) LAST_MAINSTATS = data.mainStats;
+      if(data.nizukuri)  renderNizukuri_(data.nizukuri);
+      if(data.progress)  renderProgress_(data.progress);
+      if(data.progressTest) renderProgressTest_(data.progressTest);   // ここでrenderMainStats_も呼ばれる
+      else renderMainStats_();
+      if(data.shizaiAlerts) renderShizaiAlerts_(data.shizaiAlerts);
       document.getElementById('status').textContent = '🟢 最終更新 ' + new Date().toLocaleTimeString('ja-JP');
     });
   }
