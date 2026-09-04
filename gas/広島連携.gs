@@ -67,6 +67,7 @@ function doGet(e){
     else if(type === 'shizaiUsage')  out = getShizaiUsage_(e.parameter);
     else if(type === 'bundle')       out = getBundle_(e.parameter);
     else if(type === 'debug')        out = debugTop_();
+    else if(type === 'debugOrder')   out = debugOrder_(e.parameter);
     else out = { error:'type を progress / funes / progressTestGet / seisanGet / nizukuri / mainStats / shizaiAlerts / shizaiLoad / shizaiMeta / shizaiBackupList / shizaiBackupGet / shizaiUsage / bundle / debug のいずれかで指定してください' };
   }catch(err){
     out = { error: String(err && err.message || err) };
@@ -290,7 +291,9 @@ function buildOrderCols_(v, nameRow){
   var kubunRow = nameRow + 1;
   var cols = [], byName = {}, lastName = '';
   var width = v[nameRow] ? v[nameRow].length : 0;
-  for(var c = 2; c < width; c++){
+  // c=0は日付列。取引先名の先頭（例：ハローズ）はc=1から始まるため、c=1から見る
+  //   （c=2からにすると、最初の取引先の1列目がまるごと抜け落ちる＝debugOrderで発覚した不具合）
+  for(var c = 1; c < width; c++){
     var nm = normText_(v[nameRow][c]);
     if(nm) lastName = nm;
     var name = lastName;
@@ -383,6 +386,45 @@ function getMainStatsToday_(params){
     date: params.date || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd'),
     rowFound: row >= 0,
     stats: stats
+  };
+}
+
+// ⑤ 診断用：nizukuriが空になる原因調査（本番運用には使わない）
+//   ?type=debugOrder&date=... → nameRow・検出できた列数・列の中身（先頭20件）・本日行の生データを返す
+function debugOrder_(params){
+  params = params || {};
+  var sh = openOrderSheetReadOnly_(CFG.ORDER_MAIN_SHEET);
+  if(!sh) return { error: 'シート「' + CFG.ORDER_MAIN_SHEET + '」が見つかりません' };
+  var v = sh.getDataRange().getValues();
+  var nameRow = findOrderNameRow_(v);
+  if(nameRow < 0) return { error: '取引先の見出し行が見つかりませんでした' };
+  var meta = detectDayColAndHeaderRows_(v);
+  var row = findRowByDate_(v, meta.dayCol, params.date);
+  var nyusuRow = nameRow + 2, kubunRow = nameRow + 1;
+  var width = v[nameRow] ? v[nameRow].length : 0;
+
+  // フィルタ前の生データ（列ごとに：取引先名候補・区分候補・入数候補・本日の値）を先頭30列だけ
+  var raw = [];
+  var lastName = '';
+  for(var c = 1; c < Math.min(width, 30); c++){
+    var nm = normText_(v[nameRow][c]);
+    if(nm) lastName = nm;
+    raw.push({
+      c: c,
+      nameCell: v[nameRow][c],
+      nameCarried: lastName,
+      kubunCell: v[kubunRow] ? v[kubunRow][c] : null,
+      nyusuCell: v[nyusuRow] ? v[nyusuRow][c] : null,
+      todayVal: (row >= 0) ? v[row][c] : null
+    });
+  }
+  var built = buildOrderCols_(v, nameRow);
+  return {
+    nameRow: nameRow, nyusuRow: nyusuRow, kubunRow: kubunRow,
+    dayCol: meta.dayCol, rowFound: row >= 0, rowIndex: row,
+    builtColsCount: built.cols.length,
+    builtColsSample: built.cols.slice(0, 20),
+    rawFirst30Cols: raw
   };
 }
 
