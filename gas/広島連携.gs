@@ -57,6 +57,9 @@ function doGet(e){
     else if(type === 'funes')        out = getFunesToday_(e.parameter);
     else if(type === 'progressTestGet') out = progressTestGet_(e.parameter);
     else if(type === 'seisanGet')    out = seisanGet_(e.parameter);
+    else if(type === 'nizukuri')     out = getNizukuriToday_(e.parameter);   // ⑤ 発注書「発注書」シート：本日の取引先別注文一覧
+    else if(type === 'mainStats')    out = getMainStatsToday_(e.parameter);  // ① 発注書「発注書」7行目の集計列（荷造り舟数・収穫舟数等）
+    else if(type === 'shizaiAlerts') out = getShizaiAlerts_();               // ④ 資材管理アプリの要確認アラート（簡易版）
     else if(type === 'shizaiLoad')   out = getShizaiState_();
     else if(type === 'shizaiMeta')   out = getShizaiMeta_();
     else if(type === 'shizaiBackupList') out = getShizaiBackupList_();
@@ -64,7 +67,7 @@ function doGet(e){
     else if(type === 'shizaiUsage')  out = getShizaiUsage_(e.parameter);
     else if(type === 'bundle')       out = getBundle_(e.parameter);
     else if(type === 'debug')        out = debugTop_();
-    else out = { error:'type を progress / funes / progressTestGet / seisanGet / shizaiLoad / shizaiMeta / shizaiBackupList / shizaiBackupGet / shizaiUsage / bundle / debug のいずれかで指定してください' };
+    else out = { error:'type を progress / funes / progressTestGet / seisanGet / nizukuri / mainStats / shizaiAlerts / shizaiLoad / shizaiMeta / shizaiBackupList / shizaiBackupGet / shizaiUsage / bundle / debug のいずれかで指定してください' };
   }catch(err){
     out = { error: String(err && err.message || err) };
   }
@@ -105,7 +108,10 @@ function getBundle_(params){
     progress:     safe(function(){ return getProgressToday_(params); }),
     funes:        safe(function(){ return getFunesToday_(params); }),
     progressTest: safe(function(){ return progressTestGet_(params); }),
-    seisan:       safe(function(){ return seisanGet_(params); })
+    seisan:       safe(function(){ return seisanGet_(params); }),
+    nizukuri:     safe(function(){ return getNizukuriToday_(params); }),
+    mainStats:    safe(function(){ return getMainStatsToday_(params); }),
+    shizaiAlerts: safe(function(){ return getShizaiAlerts_(); })
   };
 }
 
@@ -254,6 +260,170 @@ function getFunesToday_(params){
     rowFound: row >= 0,
     matches: matches   // 2件以上あれば要確認（発注書に似た表が複数ある可能性）
   };
+}
+
+// ============================================================
+// ①⑤ 発注書「発注書」シート：取引先ごとの本日の注文一覧＋集計値（読み取りのみ）
+//   実際のシート構成（ユーザー確認済み・2026年度）：
+//     取引先名の行＝先頭2〜3列のどこかに西暦(2026)がある行（例：A7セル）
+//     区分の行　　＝取引先名の行の1つ下（土付き/土なし/洗い/Mup/C/2S 等）
+//     入数の行　　＝取引先名の行の2つ下（3.34, 2, 5, 10 等のkg数）
+//   同じ行に「合計／荷造数量／収穫舟数／荷造り舟数／ｽﾄｯｸ舟数／追い送り残数」の集計列もある
+// ============================================================
+var NZ_EXCLUDE_RE = /合計|ワンベジ|カワカミ|生産者|自社|収穫|荷造り|追い送り|ストック|ｽﾄｯｸ|舟数|残数|入力/;
+var NZ_KG_GROUP_RE = /個人注文|その他サンプル/;
+
+// 先頭15行・先頭3列の中から「西暦（2000〜2100）」があるセルを探し、その行を取引先名の行とする
+function findOrderNameRow_(v){
+  for(var r = 0; r < Math.min(v.length, 15); r++){
+    for(var c = 0; c < 3; c++){
+      var y = Number(v[r][c]);
+      if(y >= 2000 && y <= 2100) return r;
+    }
+  }
+  return -1;
+}
+
+// 取引先名の行から、列ごとの{取引先名・区分・入数}を組み立てる（集計列・ワンベジ列は除外）
+function buildOrderCols_(v, nameRow){
+  var nyusuRow = nameRow + 2;
+  var kubunRow = nameRow + 1;
+  var cols = [], byName = {}, lastName = '';
+  var width = v[nameRow] ? v[nameRow].length : 0;
+  for(var c = 2; c < width; c++){
+    var nm = normText_(v[nameRow][c]);
+    if(nm) lastName = nm;
+    var name = lastName;
+    if(!name) continue;
+    var isKg = NZ_KG_GROUP_RE.test(name);
+    if(!isKg && NZ_EXCLUDE_RE.test(name)) continue;
+    var nyusu = Number(v[nyusuRow] ? v[nyusuRow][c] : NaN);
+    if(!(nyusu > 0)) continue;   // 入数が数値の列だけ＝実際の取引先の商品列
+    var kubun = normText_(kubunRow < v.length ? v[kubunRow][c] : '');
+    if(kubun === '土なし') kubun = '洗い';
+    if(/^[\d.]+$/.test(kubun)) kubun = '';
+    if(kubun && !byName[name]) byName[name] = kubun;
+    if(isKg){ cols.push({ c:c, name:name, nyusu:nyusu, kubun:'', kgUnit:true }); continue; }
+    cols.push({ c:c, name:name, nyusu:nyusu, kubun:kubun });
+  }
+  return { cols: cols, byName: byName };
+}
+
+// ⑤ 本日（または指定日）の取引先別・注文一覧（数量・kg）。あくまで発注書シートの読み取りのみ。
+function getNizukuriToday_(params){
+  params = params || {};
+  var sh = openOrderSheetReadOnly_(CFG.ORDER_MAIN_SHEET);
+  if(!sh) return { error: 'シート「' + CFG.ORDER_MAIN_SHEET + '」が見つかりません' };
+  var v = sh.getDataRange().getValues();
+  var nameRow = findOrderNameRow_(v);
+  if(nameRow < 0) return { error: '取引先の見出し行（西暦がある行）が見つかりませんでした' };
+  var meta = detectDayColAndHeaderRows_(v);
+  var built = buildOrderCols_(v, nameRow);
+  var row = findRowByDate_(v, meta.dayCol, params.date);
+
+  var orders = [], totalQty = 0, totalKg = 0;
+  if(row >= 0){
+    var kgAgg = {}, kgOrder = [];
+    built.cols.forEach(function(col){
+      var qty = Number(v[row][col.c]) || 0;
+      if(qty <= 0) return;
+      if(col.kgUnit){
+        if(!(col.name in kgAgg)){ kgAgg[col.name] = 0; kgOrder.push(col.name); }
+        kgAgg[col.name] += qty * (col.nyusu || 1);
+        return;
+      }
+      var kubun = col.kubun || built.byName[col.name] || '';
+      var kg = Math.round(qty * col.nyusu);
+      orders.push({ cust: col.name, kubun: kubun, nyusu: col.nyusu, qty: qty, kg: kg });
+      totalQty += qty; totalKg += kg;
+    });
+    kgOrder.forEach(function(nm){
+      var kgv = kgAgg[nm]; if(!(kgv > 0)) return;
+      kgv = Math.round(kgv * 10) / 10;
+      orders.push({ cust: nm, kubun: '', nyusu: 1, qty: kgv, kg: Math.round(kgv), unit: 'kg' });
+      totalKg += Math.round(kgv);
+    });
+  }
+  return {
+    sheet: CFG.ORDER_MAIN_SHEET,
+    date: params.date || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd'),
+    rowFound: row >= 0,
+    orders: orders,
+    totalQty: totalQty,
+    totalKg: totalKg
+  };
+}
+
+// ① 取引先名の行にある集計列（合計／荷造数量／収穫舟数／荷造り舟数／ｽﾄｯｸ舟数／追い送り残数）の本日値
+function getMainStatsToday_(params){
+  params = params || {};
+  var sh = openOrderSheetReadOnly_(CFG.ORDER_MAIN_SHEET);
+  if(!sh) return { error: 'シート「' + CFG.ORDER_MAIN_SHEET + '」が見つかりません' };
+  var v = sh.getDataRange().getValues();
+  var nameRow = findOrderNameRow_(v);
+  if(nameRow < 0) return { error: '取引先の見出し行が見つかりませんでした' };
+  var meta = detectDayColAndHeaderRows_(v);
+  var row = findRowByDate_(v, meta.dayCol, params.date);
+  var keys = ['荷造り舟数', '収穫舟数', '荷造数量', 'ｽﾄｯｸ舟数', 'ストック舟数', '追い送り残数', '合計'];
+  var stats = {};
+  var width = v[nameRow] ? v[nameRow].length : 0;
+  for(var c = 0; c < width; c++){
+    var label = normText_(v[nameRow][c]);
+    if(!label) continue;
+    for(var k = 0; k < keys.length; k++){
+      if(stats.hasOwnProperty(keys[k])) continue;   // 最初に見つかった列を採用
+      if(label.indexOf(keys[k]) >= 0){
+        var val = (row >= 0) ? v[row][c] : '';
+        stats[keys[k]] = (typeof val === 'number') ? val : (val || '');
+      }
+    }
+  }
+  return {
+    sheet: CFG.ORDER_MAIN_SHEET,
+    date: params.date || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd'),
+    rowFound: row >= 0,
+    stats: stats
+  };
+}
+
+// ============================================================
+// ④ 資材管理アプリの「要確認」簡易アラート（読み取りのみ・DATA_SS_ID内のデータから計算）
+//   ※今はしきい値方式（残数◯個で警告）の資材だけ判定する簡易版。
+//     定期チェック方式（◯日ごと）や発注書連動方式は、資材アプリ本体（shizai.html）の方が正確なので
+//     そちらで確認してください（ここでは対応していません）。
+// ============================================================
+function getShizaiAlerts_(){
+  var out = { alerts: [], count: 0 };
+  try{
+    var state = getShizaiState_();
+    var s = JSON.parse(state.json || '{}');
+    var materials = s.materials || [];
+    var latestByName = {};
+    try{
+      var stockSh = SpreadsheetApp.openById(CFG.DATA_SS_ID).getSheetByName(CFG.SHIZAI_STOCK_SHEET);
+      if(stockSh){
+        var sv = stockSh.getDataRange().getValues();
+        if(sv.length > 1){
+          var lastCol = sv[0].length - 1;
+          for(var r = 1; r < sv.length; r++){
+            var nm = String(sv[r][0] || ''); if(!nm) continue;
+            var val = sv[r][lastCol];
+            if(val !== '' && val != null && !isNaN(Number(val))) latestByName[nm] = Number(val);
+          }
+        }
+      }
+    }catch(e){}
+    materials.forEach(function(m){
+      if(m.alertMode === 'threshold' && (m.name in latestByName)){
+        var actual = latestByName[m.name];
+        if(actual <= Number(m.thresholdQty || 0)){
+          out.alerts.push({ name: m.name, unit: m.unit || '', actual: actual, thresholdQty: Number(m.thresholdQty || 0) });
+        }
+      }
+    });
+    out.count = out.alerts.length;
+  }catch(e){ out.error = String(e); }
+  return out;
 }
 
 // ============================================================
@@ -653,3 +823,6 @@ function testDebug(){ Logger.log(JSON.stringify(debugTop_(), null, 2)); }
 function testProgress(){ Logger.log(JSON.stringify(getProgressToday_({}), null, 2)); }
 function testFunes(){ Logger.log(JSON.stringify(getFunesToday_({}), null, 2)); }
 function testBundle(){ Logger.log(JSON.stringify(getBundle_({}), null, 2)); }
+function testNizukuri(){ Logger.log(JSON.stringify(getNizukuriToday_({}), null, 2)); }
+function testMainStats(){ Logger.log(JSON.stringify(getMainStatsToday_({}), null, 2)); }
+function testShizaiAlerts(){ Logger.log(JSON.stringify(getShizaiAlerts_(), null, 2)); }
