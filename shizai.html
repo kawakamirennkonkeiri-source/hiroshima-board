@@ -412,26 +412,24 @@ code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
 
 <script>
 /* =================== SEED DATA =================== */
-// 基準在庫は「棚卸し2026.8.3」の実地棚卸数量（在庫数H列）を反映（2026-08-06）
+// 基準在庫は「【広島】2026年18期棚卸」R8/8センター関係の実地棚卸数量を反映（2026-09-10）
+//   ※資材マスタは「R8/8センター関係」タブに載っている資材だけに絞っている
+//     （真空3.34kg・食品シート・真空袋・国内用真空袋(・無地)・海外用真空袋は、このタブに
+//     無いため削除。別タブ「生産関係」で管理されているものと思われる＝必要になれば再確認して追加）
 const SEED_MATERIALS = [
   ['箱','新旨2kg','枚','',7,0,2,1000],
-  ['箱','新旨3.34kg','枚','',7,4530,2,1000],
-  ['箱','旨3.34kg','枚','',7,1895,2,1000],
-  ['箱','真空3.34kg','枚','',7,5211,2,1000],
-  ['箱','2kg','枚','',7,2363,2,1000],
-  ['箱','洗い5kg','枚','',7,4028,2,1000],
-  ['箱','土付き5kg','枚','',7,688,2,1000],
-  ['箱','洗い10kg','枚','',7,1902,2,1000],
-  ['箱','土付き10kg','枚','',7,931,2,1000],
-  ['その他資材','食品シート','枚','',7,5700,1,5000],
-  ['その他資材','真空袋','枚','',7,60400,3,10000],
-  ['その他資材','新旨れんこんシール','枚','',7,5816,1,5000],
-  ['その他資材','旨れんこんシール','枚','',7,4400,1,5000],
-  ['その他資材','ばんじゅう袋','枚','',7,65000,1,10000],
-  ['その他資材','ミラマット','枚','',7,24332,1,10000],
-  ['その他資材','国内用真空袋','枚','',7,39560,2,10000],
-  ['その他資材','国内用真空袋・無地','枚','',7,6900,2,5000],
-  ['その他資材','海外用真空袋','枚','',7,13100,2,5000],
+  ['箱','新旨3.34kg','枚','',7,215,2,1000],
+  ['箱','旨3.34kg','枚','',7,3220,2,1000],
+  ['箱','2kg','枚','',7,960,2,1000],
+  ['箱','洗い5kg','枚','',7,1325,2,1000],
+  ['箱','土付き5kg','枚','',7,0,2,1000],
+  ['箱','洗い10kg','枚','',7,461,2,1000],
+  ['箱','土付き10kg','枚','',7,0,2,1000],
+  ['その他資材','新旨れんこんシール','枚','',7,20400,1,5000],
+  ['その他資材','旨れんこんシール','枚','',7,0,1,5000],
+  ['その他資材','ばんじゅう袋','枚','',7,4000,1,10000],
+  ['その他資材','ミラマット','枚','',7,0,1,10000],
+  ['その他資材','片開きシート','枚','',7,10400,1,5000],
 ];
 // [取引先,区分,入数,exc,kg,boxSize]
 const SEED_SKUS = [
@@ -478,19 +476,25 @@ const SHINUMA_PAIRS=[['新旨2kg','2kg'],['新旨3.34kg','旨3.34kg'],['新旨�
 // 棚卸2026.8.3の消耗品（発注書に直結しない）。初期データに最初から入れる（＝資材マスタの追加ボタンは廃止）
 // alertMode: 'threshold'=残数しきい値 / 'periodic'=定期(N日ごと)
 const EXTRA_MATERIALS=[
-  {cat:'消耗品',name:'機械用OPPテープ',unit:'個',supplier:'日野出',initStock:10,alertMode:'threshold',thresholdQty:2},
+  {cat:'消耗品',name:'機械用OPPテープ',unit:'個',supplier:'日野出',initStock:7,alertMode:'threshold',thresholdQty:2},
   {cat:'消耗品',name:'白バンド(ワールドバンドSB)',unit:'巻',supplier:'日野出',initStock:1,alertMode:'threshold',thresholdQty:1},
-  {cat:'消耗品',name:'シュリンク用ラップ(コージンコーラップCS)',unit:'本',supplier:'日野出',initStock:14,alertMode:'threshold',thresholdQty:3},
-  {cat:'消耗品',name:'パレット用ストレッチフィルム',unit:'本',supplier:'日野出',initStock:79,alertMode:'threshold',thresholdQty:10},
-  {cat:'消耗品',name:'ダスター(PSカウンタークロス)',unit:'箱',supplier:'日野出',initStock:17,alertMode:'periodic',periodDays:180},
-  {cat:'消耗品',name:'ビニール手袋S',unit:'枚',supplier:'日野出',initStock:11300,alertMode:'periodic',periodDays:30},
-  {cat:'消耗品',name:'ビニール手袋M',unit:'枚',supplier:'日野出',initStock:15200,alertMode:'periodic',periodDays:30},
-  {cat:'消耗品',name:'ビニール手袋L',unit:'枚',supplier:'日野出',initStock:9600,alertMode:'periodic',periodDays:30},
-  {cat:'消耗品',name:'エプロン(ワンタッチ前掛)',unit:'枚',supplier:'日野出',initStock:45,alertMode:'periodic',periodDays:180},
-  {cat:'消耗品',name:'耐切手袋S(DURACoil)',unit:'枚',supplier:'日野出',initStock:15,alertMode:'threshold',thresholdQty:2},
-  {cat:'消耗品',name:'耐切手袋M(DURACoil)',unit:'枚',supplier:'日野出',initStock:17,alertMode:'threshold',thresholdQty:2},
-  {cat:'消耗品',name:'耐切手袋L(DURACoil)',unit:'枚',supplier:'日野出',initStock:7,alertMode:'threshold',thresholdQty:2},
-  {cat:'消耗品',name:'ピローフィルムNew',unit:'本',supplier:'日野出',initStock:11,alertMode:'threshold',thresholdQty:3},
+  {cat:'消耗品',name:'パレット用ストレッチフィルム',unit:'本',supplier:'日野出',initStock:10,alertMode:'threshold',thresholdQty:10},
+  {cat:'消耗品',name:'ダスター(PSカウンタークロス)',unit:'箱',supplier:'日野出',initStock:0,alertMode:'periodic',periodDays:180},
+  {cat:'消耗品',name:'ビニール手袋S',unit:'枚',supplier:'日野出',initStock:3600,alertMode:'periodic',periodDays:30},
+  {cat:'消耗品',name:'ビニール手袋M',unit:'枚',supplier:'日野出',initStock:3200,alertMode:'periodic',periodDays:30},
+  {cat:'消耗品',name:'ビニール手袋L',unit:'枚',supplier:'日野出',initStock:3800,alertMode:'periodic',periodDays:30},
+  {cat:'消耗品',name:'エプロン(ワンタッチ前掛)',unit:'枚',supplier:'日野出',initStock:6,alertMode:'periodic',periodDays:180},
+  {cat:'消耗品',name:'耐切手袋S(DURACoil)',unit:'枚',supplier:'日野出',initStock:3,alertMode:'threshold',thresholdQty:2},
+  {cat:'消耗品',name:'耐切手袋M(DURACoil)',unit:'枚',supplier:'日野出',initStock:0,alertMode:'threshold',thresholdQty:2},
+  {cat:'消耗品',name:'耐切手袋L(DURACoil)',unit:'枚',supplier:'日野出',initStock:0,alertMode:'threshold',thresholdQty:2},
+  // 2026-09-10：R8/8センター関係の棚卸に載っていた「未管理だった資材」を追加
+  {cat:'消耗品',name:'クラフトテープ白(50×50)',unit:'個',supplier:'日野出',initStock:0,alertMode:'threshold',thresholdQty:2},
+  {cat:'消耗品',name:'OPPテープ透明(50×50・手貼り用)',unit:'個',supplier:'日野出',initStock:17,alertMode:'threshold',thresholdQty:3},
+  {cat:'消耗品',name:'白グリス',unit:'個',supplier:'',initStock:2,alertMode:'threshold',thresholdQty:1},
+  {cat:'消耗品',name:'れん楽船',unit:'個',supplier:'',initStock:5,alertMode:'threshold',thresholdQty:1},
+  {cat:'消耗品',name:'洗浄機ブッシュ',unit:'個',supplier:'',initStock:6,alertMode:'threshold',thresholdQty:1},
+  {cat:'消耗品',name:'洗浄機部材aoki',unit:'個',supplier:'',initStock:4,alertMode:'threshold',thresholdQty:1},
+  {cat:'消耗品',name:'洗浄機部材3/4×27',unit:'個',supplier:'',initStock:3,alertMode:'threshold',thresholdQty:1},
 ];
 function defaultState(){
   const materials=SEED_MATERIALS.map((m,i)=>({
