@@ -83,6 +83,7 @@ function doGet(e){
     else if(type === 'shizaiUsage')  out = getShizaiUsage_(e.parameter);
     else if(type === 'shift')        out = getHiroshimaShiftToday_(e.parameter);   // ⑥ 本日出勤人数
     else if(type === 'haichiGet')    out = getHaichiGet_(e.parameter);             // ⑥ 配置図
+    else if(type === 'debugShift')   out = debugShift_(e.parameter);               // ⑥ 診断用
     else if(type === 'bundle')       out = getBundle_(e.parameter);
     else if(type === 'debug')        out = debugTop_();
     else if(type === 'debugOrder')   out = debugOrder_(e.parameter);
@@ -1042,6 +1043,23 @@ function getHaichiGet_(params){
     absentOverride: state.absentOverride || [],
     extra: state.extra || []
   };
+}
+
+// 診断用：シフトシートの日付ヘッダー行検出が失敗する時の調査用（本番運用には使わない）
+//   ?type=debugShift → 探そうとしたシート名・実際に存在するシート名一覧・先頭12行×10列の生データを返す
+function debugShift_(params){
+  params = params || {};
+  var target = resolveTargetDate_(params.date);
+  var rm = reiwaYearMonth_(target);
+  var wantName = 'R' + rm.reiwa + '年' + rm.month + '月';
+  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var out = { wantSheetName: wantName, dataSheetNames: ss.getSheets().map(function(s){ return s.getName(); }) };
+  var sh = ss.getSheetByName(wantName);
+  if(!sh) return out;
+  var v = sh.getDataRange().getValues();
+  out.top12Rows = v.slice(0, Math.min(12, v.length)).map(function(row){ return row.slice(0, 10); });
+  out.headDetected = findShiftDayHeaderRow_(v);
+  return out;
 }
 
 // ============================================================
