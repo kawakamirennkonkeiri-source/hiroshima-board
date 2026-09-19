@@ -42,6 +42,22 @@ var CFG = {
   SHIZAI_BACKUP_SHEET: '資材バックアップ', // ③ 月末棚卸ごとの世代バックアップ（追記のみ）
   SHIZAI_STOCK_SHEET: '月末棚卸（実数）',  // ③ 人が読める実数の表
 
+  // ⑥ シフト連携（本日出勤人数・配置図）：シフト表本体はDATA_SS_ID内「R◯年◯月」シート
+  //   （年度が変わるとシート名が変わる＝センターv2と同じ罠。動的に探す。CFGに固定シート名は持たない）
+  HAICHI_ZONES: [
+    { id:'nagashi',   label:'流し' },
+    { id:'conveyor',  label:'はつり' },
+    { id:'shiwake',   label:'仕分け' },
+    { id:'shiwake_h', label:'仕分け補助' },
+    { id:'hakoire',   label:'箱入れ' },
+    { id:'pallet',    label:'パレット' },
+    { id:'hakoori',   label:'箱織' }
+  ],
+  HAICHI_DEFAULT_CAPACITY: { conveyor: 4 },   // 未設定ゾーンは既定2（後述の関数側で補完）
+  HAICHI_SKILL_SHEET: '力量表',      // ⑥ 氏名×ゾーンの○/△/×（直接スプレッドシート編集で調整）
+  HAICHI_CFG_SHEET: '配置設定',      // ⑥ ゾーンID/表示名/定員（直接スプレッドシート編集で調整）
+  HAICHI_STATE_SHEET: '配置図状態',  // ⑥ 本日の配置・欠勤上書き・応援追加（JSON1行/日付）
+
   MARK_PRESENT: '〇'
 };
 
@@ -65,10 +81,12 @@ function doGet(e){
     else if(type === 'shizaiBackupList') out = getShizaiBackupList_();
     else if(type === 'shizaiBackupGet')  out = getShizaiBackup_(e.parameter);
     else if(type === 'shizaiUsage')  out = getShizaiUsage_(e.parameter);
+    else if(type === 'shift')        out = getHiroshimaShiftToday_(e.parameter);   // ⑥ 本日出勤人数
+    else if(type === 'haichiGet')    out = getHaichiGet_(e.parameter);             // ⑥ 配置図
     else if(type === 'bundle')       out = getBundle_(e.parameter);
     else if(type === 'debug')        out = debugTop_();
     else if(type === 'debugOrder')   out = debugOrder_(e.parameter);
-    else out = { error:'type を progress / funes / progressTestGet / seisanGet / nizukuri / mainStats / shizaiAlerts / shizaiLoad / shizaiMeta / shizaiBackupList / shizaiBackupGet / shizaiUsage / bundle / debug のいずれかで指定してください' };
+    else out = { error:'type を progress / funes / progressTestGet / seisanGet / nizukuri / mainStats / shizaiAlerts / shizaiLoad / shizaiMeta / shizaiBackupList / shizaiBackupGet / shizaiUsage / shift / haichiGet / bundle / debug のいずれかで指定してください' };
   }catch(err){
     out = { error: String(err && err.message || err) };
   }
@@ -93,6 +111,7 @@ function doPost(e){
     else if(action === 'seisanSave')       out = seisanSave_(body);
     else if(action === 'shizaiSave')       out = saveShizaiState_(body);
     else if(action === 'shizaiBackupSave') out = saveShizaiBackup_(body);
+    else if(action === 'haichiSave')       out = haichiSave_(body);   // ⑥ 配置図：本日の配置・欠勤上書き・応援追加
     else out = { ok:false, error:'unknown action: ' + action };
   }catch(err){
     out = { ok:false, error:String(err && err.message || err) };
@@ -112,7 +131,10 @@ function getBundle_(params){
     seisan:       safe(function(){ return seisanGet_(params); }),
     nizukuri:     safe(function(){ return getNizukuriToday_(params); }),
     mainStats:    safe(function(){ return getMainStatsToday_(params); }),
-    shizaiAlerts: safe(function(){ return getShizaiAlerts_(); })
+    shizaiAlerts: safe(function(){ return getShizaiAlerts_(); }),
+    shift:        safe(function(){ return getHiroshimaShiftToday_(params); })
+    // ⚠配置図（haichiGet/haichiSave）は生産者タブと同様、タブを開いた時だけ読み込む＝
+    //   30秒バンドルポーリングの対象には含めない（負荷を増やさないため）
   };
 }
 
@@ -815,6 +837,214 @@ function inRangeLoose_(md, start, end){
 }
 
 // ============================================================
+// ⑥ シフト連携：本日出勤人数・配置図
+//   シフト表本体はDATA_SS_ID内「R◯年◯月」シート（年度が変わるとシート名が変わる＝
+//   センターv2と同じ罠。固定シート名はCFGに持たず毎回動的に探す）。
+//   力量表・配置設定は曽我さんがスプレッドシートを直接編集して調整する運用＝保存APIは無い。
+// ============================================================
+function resolveTargetDate_(dateStr){
+  if(dateStr){
+    var m = String(dateStr).match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+    if(m) return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  }
+  return new Date();
+}
+function reiwaYearMonth_(d){
+  return { reiwa: d.getFullYear() - 2018, month: d.getMonth() + 1 };
+}
+function findShiftSheetName_(ss, dateObj){
+  var rm = reiwaYearMonth_(dateObj);
+  var want = 'R' + rm.reiwa + '年' + rm.month + '月';
+  return ss.getSheetByName(want) ? want : null;
+}
+// シフト表は「1,2,3…」の連番が並ぶ行を日付ヘッダーとして自動検出する（行番号のベタ書き禁止。
+//   氏名は行・日付は列という向きが発注書と逆なので専用の検出ロジックにしている）
+function findShiftDayHeaderRow_(v){
+  for(var r = 0; r < Math.min(v.length, 12); r++){
+    for(var c = 0; c < Math.min(v[r] ? v[r].length : 0, 6); c++){
+      if(Number(v[r][c]) === 1){
+        var len = 1;
+        for(var k = c + 1; k < v[r].length; k++){
+          if(Number(v[r][k]) === len + 1) len++; else break;
+        }
+        if(len >= 15) return { row: r, col0: c };
+      }
+    }
+  }
+  return null;
+}
+
+// 本日（または指定日）の出勤人数。ラベル文字列（「センター合計人数」等の命名残骸）には一切
+//   依存せず、実際に〇マークをカウントする＝ラベルが将来直っても直らなくても壊れない。
+function getHiroshimaShiftToday_(params){
+  params = params || {};
+  var target = resolveTargetDate_(params.date);
+  var ymd = Utilities.formatDate(target, CFG.TZ, 'yyyy-MM-dd');
+  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var sheetName = findShiftSheetName_(ss, target);
+  if(!sheetName){
+    var rm = reiwaYearMonth_(target);
+    var all = ss.getSheets().map(function(s){ return s.getName(); }).filter(function(n){ return /^R\d+年\d+月$/.test(n); });
+    return { error: 'シフトシート「R' + rm.reiwa + '年' + rm.month + '月」が見つかりません。存在するシート：' + all.join('、') };
+  }
+  var sh = ss.getSheetByName(sheetName);
+  var v = sh.getDataRange().getValues();
+  var head = findShiftDayHeaderRow_(v);
+  if(!head) return { error: 'シート「' + sheetName + '」で日付ヘッダー行（1,2,3…の連番）が見つかりませんでした' };
+  var day = target.getDate();
+  var col = head.col0 + (day - 1);
+  var workers = [], presentCount = 0;
+  var scanLimit = Math.min(v.length, head.row + 2 + 80);
+  for(var r = head.row + 2; r < scanLimit; r++){
+    var label = normText_(v[r][1]);
+    if(label.indexOf('合計人数') >= 0) break;
+    if(!label) continue;
+    var mark = normText_(v[r][col]);
+    var present = (mark === CFG.MARK_PRESENT);
+    if(present) presentCount++;
+    workers.push({ name: label, mark: mark, present: present });
+  }
+  return { date: ymd, sheet: sheetName, workers: workers, presentCount: presentCount, totalCount: workers.length };
+}
+
+// ---- 力量表（○/△/×。曽我さんがスプレッドシートを直接編集して調整する運用。保存APIは無い） ----
+function haichiSkillSheet_(rosterNames){
+  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var name = CFG.HAICHI_SKILL_SHEET || '力量表';
+  var zones = CFG.HAICHI_ZONES || [];
+  var sh = ss.getSheetByName(name);
+  if(!sh){
+    sh = ss.insertSheet(name);
+    sh.appendRow(['氏名'].concat(zones.map(function(z){ return z.label; })));
+    try{ sh.setFrozenRows(1); }catch(e){}
+  }
+  // ロスターに居るのに力量表に未登録の人を、全ゾーン「○」で追記する（センターregisterNewWorkers_の簡易版。
+  //   氏名リストをコードにベタ書きしない＝シフト表の実データから毎回同期する）
+  if(rosterNames && rosterNames.length){
+    var v = sh.getDataRange().getValues();
+    var known = {};
+    for(var r = 1; r < v.length; r++){ var nm = normText_(v[r][0]); if(nm) known[nm] = true; }
+    rosterNames.forEach(function(raw){
+      var nm = normText_(raw); if(!nm || known[nm]) return;
+      var cells = [nm]; zones.forEach(function(){ cells.push('○'); });
+      sh.appendRow(cells);
+      known[nm] = true;
+    });
+  }
+  return sh;
+}
+function haichiReadSkills_(rosterNames){
+  var sh = haichiSkillSheet_(rosterNames);
+  var v = sh.getDataRange().getValues();
+  var zones = CFG.HAICHI_ZONES || [];
+  var skills = {};
+  for(var r = 1; r < v.length; r++){
+    var nm = normText_(v[r][0]); if(!nm) continue;
+    var row = {};
+    zones.forEach(function(z, i){ row[z.id] = normText_(v[r][1 + i]) || '○'; });
+    skills[nm] = row;
+  }
+  return skills;
+}
+
+// ---- 配置設定（ゾーンID・表示名・定員。定員は曽我さんがスプレッドシートを直接編集して調整） ----
+function haichiCfgSheet_(){
+  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var name = CFG.HAICHI_CFG_SHEET || '配置設定';
+  var zones = CFG.HAICHI_ZONES || [];
+  var sh = ss.getSheetByName(name);
+  if(!sh){
+    sh = ss.insertSheet(name);
+    sh.appendRow(['ゾーンID', '表示名', '定員']);
+    var defaultCap = CFG.HAICHI_DEFAULT_CAPACITY || {};
+    zones.forEach(function(z){ sh.appendRow([z.id, z.label, defaultCap[z.id] || 2]); });
+    try{ sh.setFrozenRows(1); }catch(e){}
+  }
+  return sh;
+}
+function haichiReadZoneCfg_(){
+  var sh = haichiCfgSheet_();
+  var v = sh.getDataRange().getValues();
+  var zones = CFG.HAICHI_ZONES || [];
+  var capById = {};
+  for(var r = 1; r < v.length; r++){
+    var id = normText_(v[r][0]); if(!id) continue;
+    capById[id] = Number(v[r][2]) || 0;
+  }
+  return zones.map(function(z){
+    return { id: z.id, label: z.label, capacity: (z.id in capById) ? capById[z.id] : 2 };
+  });
+}
+
+// ---- 配置図状態（本日の配置・欠勤上書き・応援追加。生産者記録と同じ「その日付だけ入れ替え」方式） ----
+function haichiStateSheet_(){
+  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var name = CFG.HAICHI_STATE_SHEET || '配置図状態';
+  var sh = ss.getSheetByName(name);
+  if(!sh){ sh = ss.insertSheet(name); sh.appendRow(['日付', '更新日時', '端末', '入力内容(JSON)']); try{ sh.setFrozenRows(1); }catch(e){} }
+  return sh;
+}
+function haichiReadState_(date){
+  var sh = haichiStateSheet_();
+  var last = sh.getLastRow();
+  if(last < 2) return { assignment:{}, absentOverride:[], extra:[] };
+  var v = sh.getRange(2, 1, last - 1, 4).getValues();
+  for(var i = v.length - 1; i >= 0; i--){
+    var d0 = v[i][0];
+    var dstr = (d0 instanceof Date) ? Utilities.formatDate(d0, CFG.TZ, 'yyyy-MM-dd') : String(d0).trim();
+    if(dstr !== date) continue;
+    try{ var parsed = JSON.parse(v[i][3] || '{}'); return parsed || {}; }catch(e){ return { assignment:{}, absentOverride:[], extra:[] }; }
+  }
+  return { assignment:{}, absentOverride:[], extra:[] };
+}
+function haichiSave_(body){
+  body = body || {};
+  var lock = LockService.getScriptLock();
+  try{ lock.waitLock(15000); }catch(e){ return { ok:false, error:'busy（他の保存処理中）' }; }
+  try{
+    var date = String(body.date || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
+    var now  = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd HH:mm:ss');
+    var payload = {
+      assignment: (body.assignment && typeof body.assignment === 'object') ? body.assignment : {},
+      absentOverride: Array.isArray(body.absentOverride) ? body.absentOverride : [],
+      extra: Array.isArray(body.extra) ? body.extra : []
+    };
+    var sh = haichiStateSheet_();
+    var data = sh.getDataRange().getValues();
+    var kept = [ data.length ? data[0] : ['日付', '更新日時', '端末', '入力内容(JSON)'] ];
+    for(var i = 1; i < data.length; i++){
+      var d0 = data[i][0];
+      var dstr = (d0 instanceof Date) ? Utilities.formatDate(d0, CFG.TZ, 'yyyy-MM-dd') : String(d0).trim();
+      if(dstr !== date) kept.push(data[i]);
+    }
+    kept.push([date, now, String(body.by || ''), JSON.stringify(payload)]);
+    sh.clearContents();
+    sh.getRange(1, 1, kept.length, 4).setValues(kept.map(function(r){ var a = r.slice(0, 4); while(a.length < 4) a.push(''); return a; }));
+    return { ok:true, date: date, savedAt: now };
+  } finally { try{ lock.releaseLock(); }catch(e){} }
+}
+
+// ---- 配置図：まとめ取得（読み取りのみ。力量表/配置設定は無ければ自動作成） ----
+function getHaichiGet_(params){
+  params = params || {};
+  var shift = getHiroshimaShiftToday_(params);
+  if(shift.error) return { error: shift.error };
+  var rosterNames = shift.workers.map(function(w){ return w.name; });
+  var skills = haichiReadSkills_(rosterNames);
+  var zones = haichiReadZoneCfg_();
+  var state = haichiReadState_(shift.date);
+  return {
+    date: shift.date,
+    zones: zones,
+    workers: shift.workers.map(function(w){ return { name: w.name, present: w.present }; }),
+    skills: skills,
+    assignment: state.assignment || {},
+    absentOverride: state.absentOverride || [],
+    extra: state.extra || []
+  };
+}
+
+// ============================================================
 // 診断用：デプロイ後にこの結果を見て、シート名・列検出が想定通りか確認する
 //   ?type=debug
 // ============================================================
@@ -868,3 +1098,5 @@ function testBundle(){ Logger.log(JSON.stringify(getBundle_({}), null, 2)); }
 function testNizukuri(){ Logger.log(JSON.stringify(getNizukuriToday_({}), null, 2)); }
 function testMainStats(){ Logger.log(JSON.stringify(getMainStatsToday_({}), null, 2)); }
 function testShizaiAlerts(){ Logger.log(JSON.stringify(getShizaiAlerts_(), null, 2)); }
+function testShift(){ Logger.log(JSON.stringify(getHiroshimaShiftToday_({}), null, 2)); }
+function testHaichi(){ Logger.log(JSON.stringify(getHaichiGet_({}), null, 2)); }

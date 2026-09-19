@@ -92,10 +92,36 @@
   .seisan-list:not(:empty) + .seisan-empty{ display:none; }
   .seisan-hint{ margin-top:16px; font-size:12px; color:var(--muted); line-height:1.6; }
 
+  /* ===== 配置図タブ ===== */
+  .haichi-top{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
+  .haichi-btn{ appearance:none; cursor:pointer; font-family:inherit; font-size:14px; font-weight:800; border:none; background:var(--blue); color:#fff; padding:10px 18px; border-radius:20px; }
+  .haichi-btn:active{ transform:scale(0.97); }
+  .haichi-btn.sub{ background:#fff; color:var(--blue-deep); border:1.5px solid var(--blue); padding:7px 14px; font-size:12px; }
+  .haichi-status{ font-size:12px; font-weight:700; color:var(--muted); }
+  .haichi-section-ttl{ font-size:13px; font-weight:800; color:var(--text-secondary); margin:16px 0 8px; }
+  .haichi-attend{ display:flex; flex-wrap:wrap; gap:8px; margin-bottom:6px; }
+  .haichi-attend label{ display:flex; align-items:center; gap:5px; background:var(--surface-1); border:1px solid var(--border); border-radius:16px; padding:6px 12px; font-size:13px; font-weight:700; color:var(--text-secondary); }
+  .haichi-attend label.off{ opacity:0.45; text-decoration:line-through; }
+  .haichi-attend input{ margin:0; }
+  .haichi-add{ display:flex; align-items:center; gap:8px; margin-bottom:14px; }
+  .haichi-add input{ font-family:inherit; font-size:13px; padding:6px 10px; border:1px solid var(--grid); border-radius:8px; min-width:160px; }
+  .haichi-zones{ display:grid; grid-template-columns:repeat(auto-fill, minmax(210px,1fr)); gap:14px; margin-bottom:18px; }
+  .haichi-zone{ background:var(--surface-1); border:1px solid var(--border); border-radius:14px; padding:12px 14px; }
+  .haichi-zone .zh{ display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .haichi-zone .zh .znm{ font-size:14px; font-weight:800; color:var(--text-primary); }
+  .haichi-zone .zh .zcap{ margin-left:auto; font-size:11px; font-weight:700; color:var(--muted); }
+  .haichi-zone .zh .zcap.full{ color:var(--green); }
+  .haichi-zone .zh .zcap.over{ color:var(--red); }
+  .haichi-chip{ display:inline-flex; align-items:center; gap:4px; background:#eef4fb; border:1px solid var(--border); border-radius:14px; padding:5px 10px; font-size:13px; font-weight:700; color:var(--blue-deep); margin:0 6px 6px 0; cursor:pointer; }
+  .haichi-zone-add{ appearance:none; cursor:pointer; font-family:inherit; font-size:12px; font-weight:800; border:1.5px dashed var(--grid); background:transparent; color:var(--text-secondary); padding:6px 12px; border-radius:14px; width:100%; }
+  .haichi-pool{ background:var(--surface-1); border:1px dashed var(--grid); border-radius:14px; padding:12px 14px; min-height:44px; }
+  .haichi-pool .empty{ font-size:12px; color:var(--muted); }
+
   @media (max-width:760px){
     .view{ padding:14px; }
     .seisan-list{ grid-template-columns:1fr; }
     .seisan-input{ width:100%; min-width:0; }
+    .haichi-zones{ grid-template-columns:1fr 1fr; }
   }
 </style>
 </head>
@@ -108,6 +134,7 @@
 <nav class="tabs">
   <button class="tab sel" id="tab-progress" onclick="switchView('progress')">📋 本日荷造り</button>
   <button class="tab" id="tab-seisan" onclick="switchView('seisan')">🧑‍🌾 生産者</button>
+  <button class="tab" id="tab-haichi" onclick="switchView('haichi')">🚧 配置図</button>
 </nav>
 
 <!-- ===== 本日進捗タブ ===== -->
@@ -154,6 +181,28 @@
   </div>
 </div>
 
+<!-- ===== 配置図タブ ===== -->
+<div id="view-haichi" class="view">
+  <div class="haichi-top">
+    <button class="haichi-btn" onclick="haichiAutoAssign()">🔀 自動配置</button>
+    <span class="haichi-status" id="haichi-status"></span>
+  </div>
+
+  <div class="haichi-section-ttl">本日の出勤者（シフト表の〇が初期値。チェックを外すと欠勤扱い）</div>
+  <div class="haichi-attend" id="haichi-attend"></div>
+  <div class="haichi-add">
+    <input id="haichi-newname" type="text" placeholder="応援の人の名前を入れてEnter" onkeydown="if(event.key==='Enter')haichiAddExtra();">
+    <button class="haichi-btn sub" onclick="haichiAddExtra()">＋ 応援を追加</button>
+  </div>
+
+  <div class="haichi-section-ttl">工程ごとの配置</div>
+  <div class="haichi-zones" id="haichi-zones"></div>
+
+  <div class="haichi-section-ttl">🧍 未配置</div>
+  <div class="haichi-pool" id="haichi-pool"></div>
+  <div class="seisan-hint">力量表で「×」にした工程には自動配置されません（【広島】電子黒板データ内「力量表」シートを直接編集）。定員は同スプレッドシート内「配置設定」シートで調整できます。写真の無い簡易版のため、配置は工程名の一覧表示のみです。</div>
+</div>
+
 <script>
   /* ★デプロイ後、Apps ScriptのWebアプリURLをここに貼る */
   const GAS_URL = 'https://script.google.com/macros/s/AKfycbzvyoaRFRlG5LJ30FEoCjwUvhObb6p6jIULlgwWg6sdfTCBF54JbCR5n61Bve7Uktog/exec';
@@ -187,6 +236,7 @@
     document.getElementById('view-' + name).classList.add('show');
     document.getElementById('tab-' + name).classList.add('sel');
     if(name === 'seisan') seisanOnOpen();
+    if(name === 'haichi') haichiOnOpen();
   }
 
   function tickClock(){
@@ -196,12 +246,17 @@
   setInterval(tickClock, 1000*10); tickClock();
 
   /* ===== 本日荷造りタブ ===== */
-  var LAST_FUNES = null, LAST_MAINSTATS = null, LAST_NIZUKURI = null;
+  var LAST_FUNES = null, LAST_MAINSTATS = null, LAST_NIZUKURI = null, LAST_SHIFT = null;
 
   // ①②③ 本日の状況（収穫舟数・荷造り舟数・荷造り予定㎏・テスト実績㎏合計）をまとめて表示
   function renderMainStats_(){
     var box = document.getElementById('main-stats');
     var cards = [];
+
+    // ⑥ 本日出勤人数（DATA_SS_ID内「R◯年◯月」シートより）
+    if(LAST_SHIFT && !LAST_SHIFT.error){
+      cards.push({ lbl: '本日出勤人数', val: LAST_SHIFT.presentCount, u: '人 / ' + LAST_SHIFT.totalCount + '人中' });
+    }
 
     // ① 収穫舟数（発注書シートより）
     if(LAST_FUNES && !LAST_FUNES.error && LAST_FUNES.matches && LAST_FUNES.matches.length){
@@ -275,6 +330,7 @@
       if(err || !data){ document.getElementById('status').textContent = '🟡 通信エラー：' + (err || ''); return; }
       if(data.funes)     LAST_FUNES = data.funes;
       if(data.mainStats) LAST_MAINSTATS = data.mainStats;
+      if(data.shift)     LAST_SHIFT = data.shift;
       if(data.nizukuri)  renderNizukuri_(data.nizukuri);
       renderMainStats_();
       if(data.shizaiAlerts) renderShizaiAlerts_(data.shizaiAlerts);
@@ -461,6 +517,188 @@
       gasPost_('seisanSave', { date:SEISAN.date, list:SEISAN.list }, function(d, err){
         if(d && d.ok){ _seisanDirty=false; var t=new Date(); seisanSetStatus('🟢 保存済み '+('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2),'var(--green)'); }
         else { seisanSetStatus('🟡 保存エラー（ローカルには保持）','#a76a00'); }
+      });
+    }, 700);
+  }
+
+  /* ===== 配置図タブ =====
+     優先番号・乱数タイブレーク・増員枠2パスなど、センターの配置図が持つ複雑な仕組みは
+     実装しない（広島は全員○スタート・7ゾーンの小規模運用のため意味が無い）。
+     力量表の「×」だけを「そのゾーンに配置してよいか」のフィルタに使い、ゾーン順＋出勤者の
+     登場順（＝シフト表の行順）で定員まで詰める1パスの自動配置にとどめる。
+     優先度付けが必要になったら center-skill の haichi.html（配置優先シート＋乱数タイブレーク）を参照。 */
+  var HAICHI = null;
+  var haichiAddingZone = null;
+
+  function haichiOnOpen(){ haichiLoadLive(); }
+
+  function haichiLoadLive(){
+    var el = document.getElementById('haichi-status');
+    if(el) el.textContent = '読み込み中…';
+    gasGet_('haichiGet', {}, function(data, err){
+      if(err || !data || data.error){ if(el) el.textContent = '🟡 通信エラー：' + (err || (data && data.error) || ''); return; }
+      haichiApply_(data);
+      haichiRender();
+      if(el) el.textContent = '🟢 最終更新 ' + new Date().toLocaleTimeString('ja-JP');
+    });
+  }
+  function haichiApply_(data){
+    HAICHI = data;
+    if(!HAICHI.assignment) HAICHI.assignment = {};
+    if(!HAICHI.absentOverride) HAICHI.absentOverride = [];
+    if(!HAICHI.extra) HAICHI.extra = [];
+    if(!HAICHI.skills) HAICHI.skills = {};
+    if(!HAICHI.zones) HAICHI.zones = [];
+    if(!HAICHI.workers) HAICHI.workers = [];
+  }
+
+  // 出勤者一覧（シフト由来＋応援）。チェックを外した人は除く
+  function haichiRoster_(){
+    if(!HAICHI) return [];
+    var out = [];
+    HAICHI.workers.forEach(function(w){
+      if(!w.present) return;
+      var overridden = HAICHI.absentOverride.indexOf(w.name) >= 0;
+      out.push({ name: w.name, source: 'shift', checked: !overridden });
+    });
+    HAICHI.extra.forEach(function(nm){ out.push({ name: nm, source: 'extra', checked: true }); });
+    return out;
+  }
+  function haichiAttendingNames_(){ return haichiRoster_().filter(function(r){ return r.checked; }).map(function(r){ return r.name; }); }
+  function haichiIsAssignedAnywhere_(name){
+    var a = HAICHI.assignment;
+    return Object.keys(a).some(function(z){ return (a[z] || []).indexOf(name) >= 0; });
+  }
+  function haichiRemoveFromAllZones_(name){
+    var a = HAICHI.assignment;
+    Object.keys(a).forEach(function(z){ a[z] = (a[z] || []).filter(function(n){ return n !== name; }); });
+  }
+  function haichiUnassignedCandidates_(zoneId){
+    var skills = HAICHI.skills;
+    return haichiAttendingNames_().filter(function(nm){
+      if(haichiIsAssignedAnywhere_(nm)) return false;
+      var sk = skills[nm]; var v = sk ? sk[zoneId] : '○';
+      return v !== '×';
+    });
+  }
+
+  function haichiToggleAttend(name, source, checked){
+    if(!HAICHI) return;
+    if(source === 'extra'){
+      if(!checked){ HAICHI.extra = HAICHI.extra.filter(function(n){ return n !== name; }); haichiRemoveFromAllZones_(name); }
+    } else {
+      if(checked){ HAICHI.absentOverride = HAICHI.absentOverride.filter(function(n){ return n !== name; }); }
+      else { if(HAICHI.absentOverride.indexOf(name) < 0) HAICHI.absentOverride.push(name); haichiRemoveFromAllZones_(name); }
+    }
+    haichiRender(); haichiPushSave();
+  }
+  function haichiAddExtra(){
+    if(!HAICHI) return;
+    var inp = document.getElementById('haichi-newname'); if(!inp) return;
+    var nm = (inp.value || '').trim(); if(!nm) return;
+    if(HAICHI.extra.indexOf(nm) < 0) HAICHI.extra.push(nm);
+    inp.value = ''; inp.focus();
+    haichiRender(); haichiPushSave();
+  }
+
+  function haichiOpenAdd(zoneId){ haichiAddingZone = zoneId; haichiRenderZones_(); }
+  function haichiCancelAdd(){ haichiAddingZone = null; haichiRenderZones_(); }
+  function haichiConfirmAdd(zoneId){
+    var sel = document.getElementById('haichi-pick-' + zoneId); if(!sel || !sel.value) return;
+    HAICHI.assignment[zoneId] = HAICHI.assignment[zoneId] || [];
+    HAICHI.assignment[zoneId].push(sel.value);
+    haichiAddingZone = null;
+    haichiRender(); haichiPushSave();
+  }
+  function haichiZoneChipMenu(zoneId, name){
+    if(!window.confirm(name + 'さんを未配置に戻しますか？')) return;
+    HAICHI.assignment[zoneId] = (HAICHI.assignment[zoneId] || []).filter(function(n){ return n !== name; });
+    haichiRender(); haichiPushSave();
+  }
+
+  function haichiAutoAssign(){
+    if(!HAICHI) return;
+    var zones = HAICHI.zones, skills = HAICHI.skills;
+    var assignment = {}; zones.forEach(function(z){ assignment[z.id] = []; });
+    var placed = {};
+    var attending = haichiAttendingNames_();
+    zones.forEach(function(z){
+      var room = z.capacity - assignment[z.id].length;
+      if(room <= 0) return;
+      var cands = attending.filter(function(nm){
+        if(placed[nm]) return false;
+        var sk = skills[nm]; var v = sk ? sk[z.id] : '○';
+        return v !== '×';
+      });
+      cands.slice(0, room).forEach(function(nm){ assignment[z.id].push(nm); placed[nm] = true; });
+    });
+    HAICHI.assignment = assignment;
+    haichiAddingZone = null;
+    haichiRender(); haichiPushSave();
+  }
+
+  function haichiRender(){
+    if(!HAICHI) return;
+    haichiRenderAttend_(); haichiRenderZones_(); haichiRenderPool_();
+  }
+  function haichiRenderAttend_(){
+    var box = document.getElementById('haichi-attend'); if(!box) return;
+    var roster = haichiRoster_();
+    box.innerHTML = roster.length ? roster.map(function(r){
+      return '<label class="' + (r.checked ? '' : 'off') + '"><input type="checkbox" ' + (r.checked ? 'checked' : '') +
+        ' onchange="haichiToggleAttend(\'' + escAttr_(r.name) + '\',\'' + r.source + '\',this.checked)">' +
+        escHtml_(r.name) + (r.source === 'extra' ? ' <span style="opacity:.6">（応援）</span>' : '') + '</label>';
+    }).join('') : '<span style="font-size:12px;color:var(--muted);">本日の出勤者がいません（シフト表を確認してください）</span>';
+  }
+  function haichiZoneAddPicker_(z){
+    var cands = haichiUnassignedCandidates_(z.id);
+    if(!cands.length){
+      return '<div style="font-size:12px;color:var(--muted);margin-top:4px;">配置できる未配置の人がいません　<button class="haichi-btn sub" onclick="haichiCancelAdd()">閉じる</button></div>';
+    }
+    var opts = cands.map(function(nm){ return '<option value="' + escAttr_(nm) + '">' + escHtml_(nm) + '</option>'; }).join('');
+    return '<div style="margin-top:6px;display:flex;gap:6px;flex-wrap:wrap;">' +
+      '<select id="haichi-pick-' + z.id + '">' + opts + '</select>' +
+      '<button class="haichi-btn sub" onclick="haichiConfirmAdd(\'' + z.id + '\')">追加</button>' +
+      '<button class="haichi-btn sub" onclick="haichiCancelAdd()">×</button></div>';
+  }
+  function haichiRenderZones_(){
+    var box = document.getElementById('haichi-zones'); if(!box) return;
+    box.innerHTML = HAICHI.zones.map(function(z){
+      var list = HAICHI.assignment[z.id] || [];
+      var capCls = list.length > z.capacity ? 'over' : (list.length === z.capacity ? 'full' : '');
+      var chips = list.map(function(nm){
+        return '<span class="haichi-chip" onclick="haichiZoneChipMenu(\'' + z.id + '\',\'' + escAttr_(nm) + '\')">' + escHtml_(nm) + ' ✕</span>';
+      }).join('');
+      var addRow = (haichiAddingZone === z.id) ? haichiZoneAddPicker_(z) :
+        '<button class="haichi-zone-add" onclick="haichiOpenAdd(\'' + z.id + '\')">＋ 追加</button>';
+      return '<div class="haichi-zone"><div class="zh"><span class="znm">' + escHtml_(z.label) + '</span>' +
+        '<span class="zcap ' + capCls + '">' + list.length + ' / ' + z.capacity + '人</span></div>' +
+        chips + addRow + '</div>';
+    }).join('');
+  }
+  function haichiRenderPool_(){
+    var box = document.getElementById('haichi-pool'); if(!box) return;
+    var unassigned = haichiAttendingNames_().filter(function(nm){ return !haichiIsAssignedAnywhere_(nm); });
+    box.innerHTML = unassigned.length
+      ? unassigned.map(function(nm){ return '<span class="haichi-chip" style="cursor:default;">' + escHtml_(nm) + '</span>'; }).join('')
+      : '<span class="empty">全員配置済みです</span>';
+  }
+
+  var haichiSaveTimer = null;
+  function haichiPushSave(){
+    if(!HAICHI) return;
+    var el = document.getElementById('haichi-status');
+    if(!GAS_URL || GAS_URL.indexOf('http') !== 0){ if(el) el.textContent = 'ローカルのみ（GAS_URL未設定）'; return; }
+    if(haichiSaveTimer) clearTimeout(haichiSaveTimer);
+    if(el) el.textContent = '保存中…';
+    haichiSaveTimer = setTimeout(function(){
+      gasPost_('haichiSave', {
+        date: HAICHI.date, assignment: HAICHI.assignment, absentOverride: HAICHI.absentOverride,
+        extra: HAICHI.extra, by: deviceLabel_()
+      }, function(d, err){
+        var e2 = document.getElementById('haichi-status');
+        if(d && d.ok){ var t = new Date(); if(e2) e2.textContent = '🟢 保存済み ' + ('0'+t.getHours()).slice(-2) + ':' + ('0'+t.getMinutes()).slice(-2); }
+        else if(e2){ e2.textContent = '🟡 保存エラー（ローカルには保持）'; }
       });
     }, 700);
   }
