@@ -858,15 +858,20 @@ function findShiftSheetName_(ss, dateObj){
   var want = 'R' + rm.reiwa + '年' + rm.month + '月';
   return ss.getSheetByName(want) ? want : null;
 }
-// シフト表は「1,2,3…」の連番が並ぶ行を日付ヘッダーとして自動検出する（行番号のベタ書き禁止。
-//   氏名は行・日付は列という向きが発注書と逆なので専用の検出ロジックにしている）
-function findShiftDayHeaderRow_(v){
+// シフト表は「1日,2日,3日…」の連番日付（Date型セル。見た目は「1」だけの表示形式でも実体はDate）が
+//   並ぶ行を日付ヘッダーとして自動検出する（行番号のベタ書き禁止。氏名は行・日付は列という向きが
+//   発注書と逆なので専用の検出ロジックにしている）。発注書と同じ`cellMonthDay_`でDate/テキスト両対応。
+//   ⚠数値そのものの「1,2,3…」ではなくDate型なので、見た目の表示だけで判断しない
+//   （2026-09-19に`?type=debugShift`の生データで実際にDate型と確認・修正済み）。
+function findShiftDayHeaderRow_(v, targetMonth){
   for(var r = 0; r < Math.min(v.length, 12); r++){
     for(var c = 0; c < Math.min(v[r] ? v[r].length : 0, 6); c++){
-      if(Number(v[r][c]) === 1){
+      var md = cellMonthDay_(v[r][c]);
+      if(md && md.d === 1 && (!targetMonth || md.m === targetMonth)){
         var len = 1;
         for(var k = c + 1; k < v[r].length; k++){
-          if(Number(v[r][k]) === len + 1) len++; else break;
+          var md2 = cellMonthDay_(v[r][k]);
+          if(md2 && md2.m === md.m && md2.d === len + 1) len++; else break;
         }
         if(len >= 15) return { row: r, col0: c };
       }
@@ -890,8 +895,8 @@ function getHiroshimaShiftToday_(params){
   }
   var sh = ss.getSheetByName(sheetName);
   var v = sh.getDataRange().getValues();
-  var head = findShiftDayHeaderRow_(v);
-  if(!head) return { error: 'シート「' + sheetName + '」で日付ヘッダー行（1,2,3…の連番）が見つかりませんでした' };
+  var head = findShiftDayHeaderRow_(v, target.getMonth() + 1);
+  if(!head) return { error: 'シート「' + sheetName + '」で日付ヘッダー行（1日,2日,3日…の連番）が見つかりませんでした' };
   var day = target.getDate();
   var col = head.col0 + (day - 1);
   var workers = [], presentCount = 0;
@@ -1058,7 +1063,7 @@ function debugShift_(params){
   if(!sh) return out;
   var v = sh.getDataRange().getValues();
   out.top12Rows = v.slice(0, Math.min(12, v.length)).map(function(row){ return row.slice(0, 10); });
-  out.headDetected = findShiftDayHeaderRow_(v);
+  out.headDetected = findShiftDayHeaderRow_(v, rm.month);
   return out;
 }
 
