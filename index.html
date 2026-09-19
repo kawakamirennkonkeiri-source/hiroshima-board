@@ -42,6 +42,15 @@
   .save-bar button:active{ transform:scale(0.97); }
   .save-bar .msg{ font-size:13px; font-weight:700; color:var(--muted); }
   .empty-note{ font-size:13px; color:var(--muted); padding:16px 4px; }
+  .nz-qty-bar{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; background:var(--surface-1); border:1px solid var(--border); border-radius:10px; padding:10px 14px; margin-bottom:10px; font-size:13px; }
+  .nz-qty-lbl b{ color:var(--blue-deep); font-size:15px; }
+  .nz-btn{ appearance:none; cursor:pointer; font-family:inherit; font-size:13px; font-weight:800; border:none; background:var(--blue); color:#fff; padding:8px 16px; border-radius:16px; }
+  .nz-btn.sub{ background:#fff; color:var(--blue-deep); border:1.5px solid var(--blue); padding:6px 12px; font-size:12px; }
+  .nz-tbl .nz-state-btn{ appearance:none; cursor:pointer; font-family:inherit; font-size:12px; font-weight:800; border:1.5px solid var(--grid); background:#fff; color:var(--text-secondary); padding:5px 10px; border-radius:14px; white-space:nowrap; }
+  .nz-tbl .nz-state-btn.st-kakutei{ background:#fff6e6; border-color:var(--amber); color:var(--amber); }
+  .nz-tbl .nz-state-btn.st-sakusei{ background:var(--green); border-color:var(--green); color:#fff; }
+  .nz-tbl .nz-new{ display:inline-block; background:var(--red); color:#fff; font-size:10px; font-weight:800; border-radius:8px; padding:1px 6px; margin-left:4px; vertical-align:middle; }
+  .nz-tbl input.nz-made{ width:64px; font-family:inherit; font-size:14px; text-align:right; padding:5px 7px; border:1px solid var(--grid); border-radius:6px; }
 
   /* ===== 生産者タブ（センター電子黒板から移植・簡略版） ===== */
   .seisan-wrap{ padding:0; }
@@ -153,10 +162,20 @@
   </div>
 
   <div class="stat-row" id="main-stats"></div>
+  <div class="stat-row" id="jisseki-stats"></div>
 
   <div class="section-ttl">📦 本日の注文一覧（発注書シートより・<span id="nizukuri-date"></span>）</div>
-  <table class="progress-tbl" id="nizukuri-table">
-    <thead><tr><th>取引先</th><th>区分</th><th style="text-align:right;">入数</th><th style="text-align:right;">数量</th><th style="text-align:right;">kg</th></tr></thead>
+  <div class="nz-qty-bar" id="nz-qty-bar">
+    <span class="nz-qty-lbl">本日の合計数量（終了目標時刻の計算に使用・数量変更）：<b id="nz-qty-now">―</b></span>
+    <button class="nz-btn sub" onclick="nzQtyToggleEdit()">✏️ 変更</button>
+    <span id="nz-qty-edit" style="display:none;gap:6px;align-items:center;">
+      <input id="nz-qty-input" type="number" min="0" step="1" style="width:80px;">
+      <button class="nz-btn sub" onclick="nzQtyApply()">適用</button>
+      <button class="nz-btn sub" onclick="nzQtyClear()">既定に戻す</button>
+    </span>
+  </div>
+  <table class="progress-tbl nz-tbl" id="nizukuri-table">
+    <thead><tr><th>状態</th><th>取引先</th><th>区分</th><th style="text-align:right;">入数</th><th style="text-align:right;">合計</th><th style="text-align:right;">累計</th><th style="text-align:right;">本日</th><th style="text-align:right;">のこり</th></tr></thead>
     <tbody id="nizukuri-tbody"></tbody>
   </table>
   <div class="empty-note" id="nizukuri-empty" style="display:none;">本日の注文はまだ無いようです（発注書シートに本日の行が見つからない場合も含む）。</div>
@@ -300,25 +319,124 @@
   }
 
   // ⑤ 本日の注文一覧（発注書シートより・取引先ごとの数量とkg）
+  // ⑦ 状態(未確定/確定/作成済み)・NEWバッジ・合計/累計/本日/のこりの4段・実績カード・数量変更
+  function nzStateLabel_(st){ return st === 'kakutei' ? '確定' : (st === 'sakusei' ? '作成済み' : '未確定'); }
+  function nzStateNext_(st){ return st === 'mikettei' ? 'kakutei' : (st === 'kakutei' ? 'sakusei' : 'mikettei'); }
   function renderNizukuri_(data){
     LAST_NIZUKURI = data;
     document.getElementById('nizukuri-date').textContent = (data && data.date) || '';
     var tbody = document.getElementById('nizukuri-tbody');
     var empty = document.getElementById('nizukuri-empty');
+    renderJissekiStats_(data || {});
+    nzRenderQtyBar_(data || {});
     if(!data || data.error || !data.orders || !data.orders.length){
       tbody.innerHTML = ''; empty.style.display = 'block';
       return;
     }
     empty.style.display = 'none';
     tbody.innerHTML = data.orders.map(function(o){
+      var stCls = o.state === 'kakutei' ? 'st-kakutei' : (o.state === 'sakusei' ? 'st-sakusei' : '');
       return '<tr>' +
-        '<td>' + escHtml_(o.cust) + '</td>' +
+        '<td><button class="nz-state-btn ' + stCls + '" onclick="nzStateCycle(\'' + escAttr_(o.key) + '\')">' + escHtml_(nzStateLabel_(o.state)) + '</button></td>' +
+        '<td>' + escHtml_(o.cust) + (o.isNew ? '<span class="nz-new">NEW</span>' : '') + '</td>' +
         '<td>' + escHtml_(o.kubun || '') + '</td>' +
         '<td class="val">' + escHtml_(String(o.nyusu)) + (o.unit === 'kg' ? 'kg' : '') + '</td>' +
-        '<td class="val">' + escHtml_(String(o.qty)) + (o.unit === 'kg' ? 'kg' : 'c/s') + '</td>' +
-        '<td class="val">' + escHtml_(String(o.kg)) + '</td>' +
+        '<td class="val">' + escHtml_(String(Math.round(o.qty || 0))) + (o.unit === 'kg' ? 'kg' : 'c/s') + '</td>' +
+        '<td class="val">' + escHtml_(String(o.madePrev || 0)) + '</td>' +
+        '<td class="val"><input class="nz-made" type="number" min="0" step="1" value="' + (o.madeToday || '') + '" data-key="' + escAttr_(o.key) + '" oninput="nzMadeInput(this)" onchange="nzMadeCommit(this)"></td>' +
+        '<td class="val nz-rest">' + escHtml_(String(o.rest)) + '</td>' +
       '</tr>';
-    }).join('') + '<tr><td colspan="4" style="text-align:right;font-weight:800;">合計</td><td class="val" style="font-weight:800;">' + escHtml_(String(data.totalKg || 0)) + '</td></tr>';
+    }).join('') + '<tr><td colspan="4" style="text-align:right;font-weight:800;">合計㎏</td><td class="val" style="font-weight:800;" colspan="4">' + escHtml_(String(data.totalKg || 0)) + 'kg</td></tr>';
+  }
+  function nzMadeInput(el){
+    if(!LAST_NIZUKURI) return;
+    var key = el.getAttribute('data-key');
+    var o = (LAST_NIZUKURI.orders || []).filter(function(x){ return x.key === key; })[0];
+    if(!o) return;
+    var cases = Math.max(0, Math.round(Number(el.value) || 0));
+    o.madeToday = cases;
+    o.rest = Math.round(o.qty || 0) - (o.madePrev || 0) - cases;
+    var tr = el.closest('tr');
+    var restCell = tr ? tr.querySelector('.nz-rest') : null;
+    if(restCell) restCell.textContent = o.rest;
+  }
+  function nzMadeCommit(el){
+    if(!LAST_NIZUKURI) return;
+    var key = el.getAttribute('data-key');
+    var o = (LAST_NIZUKURI.orders || []).filter(function(x){ return x.key === key; })[0];
+    if(!o) return;
+    nzPushMade_(o);
+  }
+  var nzMadeSaveTimers = {};
+  function nzPushMade_(o){
+    var key = o.key;
+    if(nzMadeSaveTimers[key]) clearTimeout(nzMadeSaveTimers[key]);
+    nzMadeSaveTimers[key] = setTimeout(function(){
+      gasPost_('nizukuriMadeSave', {
+        date: LAST_NIZUKURI.date, prodDate: LAST_NIZUKURI.date, cust: o.cust, kubun: o.kubun || '',
+        nyusu: o.nyusu || 0, cases: o.madeToday || 0, by: deviceLabel_()
+      }, function(d, err){});
+    }, 900);
+  }
+  function nzStateCycle(key){
+    if(!LAST_NIZUKURI) return;
+    var o = (LAST_NIZUKURI.orders || []).filter(function(x){ return x.key === key; })[0];
+    if(!o) return;
+    o.state = nzStateNext_(o.state);
+    renderNizukuri_(LAST_NIZUKURI);
+    nzPushState_();
+  }
+  var nzStateSaveTimer = null;
+  function nzPushState_(){
+    if(!LAST_NIZUKURI) return;
+    if(nzStateSaveTimer) clearTimeout(nzStateSaveTimer);
+    nzStateSaveTimer = setTimeout(function(){
+      var status = {};
+      (LAST_NIZUKURI.orders || []).forEach(function(o){ if(o.state && o.state !== 'mikettei') status[o.key] = o.state; });
+      gasPost_('nizukuriStateSave', {
+        date: LAST_NIZUKURI.date, status: status,
+        targetOverride: (LAST_NIZUKURI.targetOverride != null ? LAST_NIZUKURI.targetOverride : null),
+        by: deviceLabel_()
+      }, function(d, err){});
+    }, 500);
+  }
+  function nzRenderQtyBar_(data){
+    var now = document.getElementById('nz-qty-now');
+    if(now) now.textContent = (data && data.targetFunes != null) ? String(data.targetFunes) : '―';
+  }
+  function nzQtyToggleEdit(){
+    var box = document.getElementById('nz-qty-edit'); if(!box) return;
+    var show = (box.style.display === 'none' || box.style.display === '');
+    box.style.display = show ? 'flex' : 'none';
+    if(show){ var inp = document.getElementById('nz-qty-input'); if(inp) inp.value = (LAST_NIZUKURI && LAST_NIZUKURI.targetFunes != null) ? LAST_NIZUKURI.targetFunes : ''; }
+  }
+  function nzQtyApply(){
+    if(!LAST_NIZUKURI) return;
+    var inp = document.getElementById('nz-qty-input'); if(!inp) return;
+    var v = Math.max(0, Math.round(Number(inp.value) || 0));
+    LAST_NIZUKURI.targetOverride = v; LAST_NIZUKURI.targetFunes = v;
+    renderJissekiStats_(LAST_NIZUKURI); nzRenderQtyBar_(LAST_NIZUKURI);
+    document.getElementById('nz-qty-edit').style.display = 'none';
+    nzPushState_();
+  }
+  function nzQtyClear(){
+    if(!LAST_NIZUKURI) return;
+    LAST_NIZUKURI.targetOverride = null;
+    LAST_NIZUKURI.targetFunes = (LAST_NIZUKURI.orders || []).reduce(function(s, o){ return s + Math.round(o.qty || 0); }, 0);
+    renderJissekiStats_(LAST_NIZUKURI); nzRenderQtyBar_(LAST_NIZUKURI);
+    document.getElementById('nz-qty-edit').style.display = 'none';
+    nzPushState_();
+  }
+  function renderJissekiStats_(data){
+    var box = document.getElementById('jisseki-stats'); if(!box) return;
+    var cards = [
+      { lbl:'歩留まり', val: (data.budomari != null ? (Math.round(data.budomari * 10) / 10) : '―'), u:'kg/舟' },
+      { lbl:'加工率', val: (data.kakouRitsu != null ? (Math.round(data.kakouRitsu * 10) / 10) : '―'), u:'%' },
+      { lbl:'終了目標時刻', val: (data.finishTime || (data.targetFunes ? '本日中は厳しい見込み' : '―')) }
+    ];
+    box.innerHTML = cards.map(function(c){
+      return '<div class="stat-card"><div class="lbl">' + escHtml_(c.lbl) + '</div><div class="val">' + escHtml_(String(c.val)) + (c.u ? '<span class="u">' + escHtml_(c.u) + '</span>' : '') + '</div></div>';
+    }).join('');
   }
 
   // ④ 資材の要確認アラート（しきい値方式のみの簡易版）

@@ -58,6 +58,17 @@ var CFG = {
   HAICHI_CFG_SHEET: '配置設定',      // ⑥ ゾーンID/表示名/定員（直接スプレッドシート編集で調整）
   HAICHI_STATE_SHEET: '配置図状態',  // ⑥ 本日の配置・欠勤上書き・応援追加（JSON1行/日付）
 
+  // ⑦ 本日荷造りの状態管理・生産ログ・NEW判定（センター電子黒板の同機能を広島の規模に合わせて移植）
+  NZ_STATE_SHEET: '本日荷造り状態',      // 状態(確定/作成済み)・総舟数の当日上書き（JSON1行/日付）
+  NZ_LOG_SHEET: '本日荷造り生産ログ',    // 生産日ごとの「本日作った分」upsertログ（日付を跨いで蓄積）
+  NZ_SNAP_SHEET: '本日荷造りスナップショット', // NEW判定用の前回スナップショット（upsert・7日超は間引き）
+  NZ_SNAP_KEEP_DAYS: 7,
+  NZ_WORK_START: '07:00',
+  NZ_WORK_BREAKS: [['08:30','09:00'], ['10:00','10:15'], ['12:00','13:00'], ['14:00','14:15']],
+  // 広島の実データでの区分(kubun)は「洗い」「Mup」「C」「2S」等（?type=nizukuriで確認済み・2026-09-19）。
+  // センターの「区分が"C/S"の1トークン」とは表記が違うため広島専用の判定にする。
+  NZ_CS_KUBUN_RE: /^(C|\d*S)$/,
+
   MARK_PRESENT: '〇'
 };
 
@@ -84,10 +95,11 @@ function doGet(e){
     else if(type === 'shift')        out = getHiroshimaShiftToday_(e.parameter);   // ⑥ 本日出勤人数
     else if(type === 'haichiGet')    out = getHaichiGet_(e.parameter);             // ⑥ 配置図
     else if(type === 'debugShift')   out = debugShift_(e.parameter);               // ⑥ 診断用
+    else if(type === 'nizukuriFull') out = getNizukuriFull_(e.parameter);          // ⑦ 状態管理・生産ログ・実績計算つきの本日荷造り
     else if(type === 'bundle')       out = getBundle_(e.parameter);
     else if(type === 'debug')        out = debugTop_();
     else if(type === 'debugOrder')   out = debugOrder_(e.parameter);
-    else out = { error:'type を progress / funes / progressTestGet / seisanGet / nizukuri / mainStats / shizaiAlerts / shizaiLoad / shizaiMeta / shizaiBackupList / shizaiBackupGet / shizaiUsage / shift / haichiGet / bundle / debug のいずれかで指定してください' };
+    else out = { error:'type を progress / funes / progressTestGet / seisanGet / nizukuri / mainStats / shizaiAlerts / shizaiLoad / shizaiMeta / shizaiBackupList / shizaiBackupGet / shizaiUsage / shift / haichiGet / nizukuriFull / bundle / debug のいずれかで指定してください' };
   }catch(err){
     out = { error: String(err && err.message || err) };
   }
@@ -114,6 +126,8 @@ function doPost(e){
     else if(action === 'shizaiBackupSave') out = saveShizaiBackup_(body);
     else if(action === 'haichiSave')       out = haichiSave_(body);   // ⑥ 配置図：本日の配置・欠勤上書き・応援追加
     else if(action === 'haichiSkillSave')  out = haichiSkillSave_(body); // ⑥ 力量表：○/△/×をアプリから編集
+    else if(action === 'nizukuriStateSave') out = nzStateSave_(body);  // ⑦ 状態(確定/作成済み)・総舟数の当日上書き
+    else if(action === 'nizukuriMadeSave')  out = nzMadeSave_(body);   // ⑦ 本日作った分（生産ログupsert）
     else out = { ok:false, error:'unknown action: ' + action };
   }catch(err){
     out = { ok:false, error:String(err && err.message || err) };
@@ -131,7 +145,7 @@ function getBundle_(params){
     funes:        safe(function(){ return getFunesToday_(params); }),
     progressTest: safe(function(){ return progressTestGet_(params); }),
     seisan:       safe(function(){ return seisanGet_(params); }),
-    nizukuri:     safe(function(){ return getNizukuriToday_(params); }),
+    nizukuri:     safe(function(){ return getNizukuriFull_(params); }),   // ⑦ 状態管理・生産ログ・実績計算つき
     mainStats:    safe(function(){ return getMainStatsToday_(params); }),
     shizaiAlerts: safe(function(){ return getShizaiAlerts_(); }),
     shift:        safe(function(){ return getHiroshimaShiftToday_(params); })
@@ -449,6 +463,268 @@ function debugOrder_(params){
     builtColsCount: built.cols.length,
     builtColsSample: built.cols.slice(0, 20),
     rawFirst30Cols: raw
+  };
+}
+
+// ============================================================
+// ⑦ 本日荷造り：状態管理（未確定/確定/作成済み）・生産ログ（本日作った分）・NEW判定・実績計算
+//   センター電子黒板の同機能を広島の規模（1日表示のみ）に合わせて移植。発注書へは一切書き込まない
+//   （読み取りは既存のgetNizukuriToday_/getFunesToday_/getProgressToday_/seisanGet_のみ流用）。
+// ============================================================
+function nzOrderKey_(date, o){
+  return date + '|' + (o.cust || '') + '|' + (o.kubun || '') + '|' + (o.nyusu || 0);
+}
+
+// ---- 状態（未確定/確定/作成済み）・総舟数の当日上書き。「その日付だけ入れ替え」方式 ----
+function nzStateSheet_(){
+  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var name = CFG.NZ_STATE_SHEET || '本日荷造り状態';
+  var sh = ss.getSheetByName(name);
+  if(!sh){ sh = ss.insertSheet(name); sh.appendRow(['日付', '更新日時', '端末', '入力内容(JSON)']); try{ sh.setFrozenRows(1); }catch(e){} }
+  return sh;
+}
+function nzStateRead_(date){
+  var sh = nzStateSheet_();
+  var last = sh.getLastRow();
+  if(last < 2) return { status: {}, targetOverride: null };
+  var v = sh.getRange(2, 1, last - 1, 4).getValues();
+  for(var i = v.length - 1; i >= 0; i--){
+    var d0 = v[i][0];
+    var dstr = (d0 instanceof Date) ? Utilities.formatDate(d0, CFG.TZ, 'yyyy-MM-dd') : String(d0).trim();
+    if(dstr !== date) continue;
+    try{
+      var p = JSON.parse(v[i][3] || '{}');
+      return { status: p.status || {}, targetOverride: (typeof p.targetOverride === 'number') ? p.targetOverride : null };
+    }catch(e){ return { status: {}, targetOverride: null }; }
+  }
+  return { status: {}, targetOverride: null };
+}
+function nzStateSave_(body){
+  body = body || {};
+  var lock = LockService.getScriptLock();
+  try{ lock.waitLock(15000); }catch(e){ return { ok:false, error:'busy（他の保存処理中）' }; }
+  try{
+    var date = String(body.date || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
+    var now  = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd HH:mm:ss');
+    var payload = {
+      status: (body.status && typeof body.status === 'object') ? body.status : {},
+      targetOverride: (body.targetOverride === null || body.targetOverride === undefined) ? null : (Number(body.targetOverride) || 0)
+    };
+    var sh = nzStateSheet_();
+    var data = sh.getDataRange().getValues();
+    var kept = [ data.length ? data[0] : ['日付', '更新日時', '端末', '入力内容(JSON)'] ];
+    for(var i = 1; i < data.length; i++){
+      var d0 = data[i][0];
+      var dstr = (d0 instanceof Date) ? Utilities.formatDate(d0, CFG.TZ, 'yyyy-MM-dd') : String(d0).trim();
+      if(dstr !== date) kept.push(data[i]);
+    }
+    kept.push([date, now, String(body.by || ''), JSON.stringify(payload)]);
+    sh.clearContents();
+    sh.getRange(1, 1, kept.length, 4).setValues(kept.map(function(r){ var a = r.slice(0, 4); while(a.length < 4) a.push(''); return a; }));
+    return { ok:true, date: date, savedAt: now };
+  } finally { try{ lock.releaseLock(); }catch(e){} }
+}
+
+// ---- 生産ログ（本日作った分。日付を跨いで蓄積＝upsert方式。前日作成(累計)の計算根拠） ----
+function nzLogSheet_(){
+  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var name = CFG.NZ_LOG_SHEET || '本日荷造り生産ログ';
+  var sh = ss.getSheetByName(name);
+  if(!sh){ sh = ss.insertSheet(name); sh.appendRow(['キー', '生産日', '納品日', '取引先', '区分', '入数', '数量cs', '更新日時', '端末']); try{ sh.setFrozenRows(1); }catch(e){} }
+  return sh;
+}
+// 全件読み込み→ {orderKey: {生産日: cases}} のマップ（前日作成(累計)＝本日以外の合計、で使う）
+function nzLogReadAll_(){
+  var sh = nzLogSheet_();
+  var last = sh.getLastRow();
+  var map = {};
+  if(last < 2) return map;
+  var v = sh.getRange(2, 1, last - 1, 7).getValues();
+  for(var i = 0; i < v.length; i++){
+    var key = String(v[i][0] || ''); if(!key) continue;
+    var prodDate = String(v[i][1] || '');
+    var cases = Number(v[i][6]) || 0;
+    if(!map[key]) map[key] = {};
+    map[key][prodDate] = cases;
+  }
+  return map;
+}
+function nzMadeSave_(body){
+  body = body || {};
+  var lock = LockService.getScriptLock();
+  try{ lock.waitLock(15000); }catch(e){ return { ok:false, error:'busy（他の保存処理中）' }; }
+  try{
+    var ddate    = String(body.date || '').trim();                       // 納品日（＝注文キーの日付）
+    var prodDate = String(body.prodDate || '').trim() || ddate;          // 省略時は納品日=本日扱い
+    var cust  = String(body.cust  || '').trim();
+    var kubun = String(body.kubun || '').trim();
+    var nyusu = Number(body.nyusu) || 0;
+    var cases = Math.max(0, Math.round(Number(body.cases) || 0));
+    var by    = String(body.by || '').trim();
+    if(!ddate || !cust) return { ok:false, error:'date と cust は必須です' };
+    var key = ddate + '|' + cust + '|' + kubun + '|' + nyusu;
+    var now = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd HH:mm:ss');
+    var sh = nzLogSheet_();
+    var row = [key, prodDate, ddate, cust, kubun, nyusu, cases, now, by];
+    var last = sh.getLastRow(), found = -1;
+    if(last >= 2){
+      var keys  = sh.getRange(2, 1, last - 1, 1).getValues();
+      var prods = sh.getRange(2, 2, last - 1, 1).getValues();
+      for(var i = 0; i < keys.length; i++){
+        if(String(keys[i][0]) === key && String(prods[i][0]) === prodDate){ found = i + 2; break; }
+      }
+    }
+    if(found > 0){ sh.getRange(found, 1, 1, row.length).setValues([row]); }
+    else{ sh.appendRow(row); found = sh.getLastRow(); }
+    // 生産日・納品日は文字列固定で保存（Date型化によるTZずれで前日に見える事故を防ぐ）
+    sh.getRange(found, 2, 1, 2).setNumberFormat('@').setValues([[prodDate, ddate]]);
+    return { ok:true, key: key, prodDate: prodDate, savedAt: now };
+  } finally { try{ lock.releaseLock(); }catch(e){} }
+}
+
+// ---- NEW判定（前回スナップショットと比較。初回実行は基準化のみ＝NEW扱いにしない） ----
+function nzSnapSheet_(){
+  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var name = CFG.NZ_SNAP_SHEET || '本日荷造りスナップショット';
+  var sh = ss.getSheetByName(name);
+  var firstEver = false;
+  if(!sh){ sh = ss.insertSheet(name); sh.appendRow(['キー', '数量', '検知日時', '取引先区分']); try{ sh.setFrozenRows(1); }catch(e){} firstEver = true; }
+  return { sh: sh, firstEver: firstEver };
+}
+function nzMarkNew_(date, orders){
+  var t = nzSnapSheet_(), sh = t.sh;
+  var data = sh.getDataRange().getValues();
+  var firstEver = t.firstEver || data.length <= 1;
+  var snap = {};
+  for(var i = 1; i < data.length; i++){
+    var k = String(data[i][0] || ''); if(!k) continue;
+    var ca = data[i][2];
+    var caMs = (ca instanceof Date) ? ca.getTime() : (ca ? Date.parse(ca) : 0);
+    snap[k] = { qty: Number(data[i][1]) || 0, changedAt: caMs || 0, memo: String(data[i][3] || '') };
+  }
+  var now = Date.now();
+  var newWindowMs = 12 * 60 * 60 * 1000;
+  orders.forEach(function(o){
+    var key = nzOrderKey_(date, o);
+    var prev = snap[key], changedAt;
+    if(firstEver){ changedAt = 0; }
+    else if(!prev){ changedAt = now; }
+    else if(prev.qty !== (o.qty || 0)){ changedAt = now; }
+    else{ changedAt = prev.changedAt || 0; }
+    snap[key] = { qty: o.qty || 0, changedAt: changedAt, memo: o.cust + (o.kubun ? '(' + o.kubun + ')' : '') };
+    o.isNew = !!(changedAt && (now - changedAt) < newWindowMs);
+  });
+  var cutoffMs = now - (CFG.NZ_SNAP_KEEP_DAYS || 7) * 24 * 60 * 60 * 1000;
+  var out = [['キー', '数量', '検知日時', '取引先区分']];
+  Object.keys(snap).forEach(function(k){
+    var dms = Date.parse(k.split('|')[0]);
+    if(dms && dms < cutoffMs) return;   // 古いスナップショットは保存のたびに間引く
+    var s = snap[k];
+    out.push([k, s.qty, s.changedAt ? new Date(s.changedAt).toISOString() : '', s.memo]);
+  });
+  sh.clearContents();
+  sh.getRange(1, 1, out.length, 4).setValues(out);
+}
+
+// ---- 実績計算：終了目標時刻（総舟数÷(人数×2舟/時)を開始7:00・休憩4本を除いて計算） ----
+function nzWtMin_(hhmm){ var p = String(hhmm).split(':'); return (Number(p[0]) || 0) * 60 + (Number(p[1]) || 0); }
+function nzWorkPeriods_(){
+  var startMin = nzWtMin_(CFG.NZ_WORK_START || '07:00');
+  var endMin = 23 * 60 + 59;
+  var breaks = (CFG.NZ_WORK_BREAKS || []).map(function(b){ return [nzWtMin_(b[0]), nzWtMin_(b[1])]; }).sort(function(a, b){ return a[0] - b[0]; });
+  var out = [], t = startMin;
+  breaks.forEach(function(b){ if(b[0] > t) out.push([t, Math.min(b[0], endMin)]); t = Math.max(t, b[1]); });
+  if(t < endMin) out.push([t, endMin]);
+  return out.filter(function(p){ return p[1] > p[0]; });
+}
+function nzFmtMin_(m){ var hh = Math.floor(m / 60), mm = Math.round(m - hh * 60); if(mm >= 60){ hh++; mm -= 60; } return ('0' + hh).slice(-2) + ':' + ('0' + mm).slice(-2); }
+function nzCalcFinish_(totalFunes, workerCount){
+  if(!(totalFunes > 0) || !(workerCount > 0)) return null;
+  var need = totalFunes / (workerCount * 2 / 60);
+  var periods = nzWorkPeriods_();
+  var t = nzWtMin_(CFG.NZ_WORK_START || '07:00');
+  for(var i = 0; i < periods.length; i++){
+    var st = Math.max(t, periods[i][0]); if(st >= periods[i][1]) continue;
+    var avail = periods[i][1] - st;
+    if(need <= avail) return nzFmtMin_(st + need);
+    need -= avail;
+  }
+  return null;   // 本日中は厳しい見込み
+}
+
+// ---- ⑦ まとめ取得：状態・生産ログ・NEW判定・実績計算つきの本日荷造り（読み取りのみ） ----
+function getNizukuriFull_(params){
+  params = params || {};
+  var base = getNizukuriToday_(params);
+  if(base.error) return base;
+  var date = base.date;
+  var state = nzStateRead_(date);
+  var logMap = nzLogReadAll_();
+
+  var orders = base.orders.map(function(o){
+    var key = nzOrderKey_(date, o);
+    var log = logMap[key] || {};
+    var madeToday = Number(log[date]) || 0;
+    var madeTotal = 0; Object.keys(log).forEach(function(d){ madeTotal += Number(log[d]) || 0; });
+    var madePrev = madeTotal - madeToday;
+    var totalQty = Math.round(o.qty || 0);
+    return {
+      cust: o.cust, kubun: o.kubun, nyusu: o.nyusu, qty: o.qty, kg: o.kg, unit: o.unit,
+      key: key, state: state.status[key] || 'mikettei',
+      madePrev: madePrev, madeToday: madeToday, rest: totalQty - madePrev - madeToday,
+      isCS: !!(o.kubun && CFG.NZ_CS_KUBUN_RE.test(o.kubun))
+    };
+  });
+  nzMarkNew_(date, orders);   // 各要素にisNewを付与（発注書側は一切変更しない）
+
+  // 本日作った分の実績（個人注文/その他サンプル＝kg単位グループは、センターと同じ理由で対象外）
+  var allKg = 0, csKg = 0;
+  orders.forEach(function(o){
+    if(o.unit === 'kg') return;
+    var kg = o.madeToday * (o.nyusu || 0);
+    if(!kg) return;
+    allKg += kg;
+    if(o.isCS) csKg += kg;
+  });
+
+  // 舟数（歩留まりの分母）＝収穫舟数（発注書funes）＋生産者タブの収穫舟数合計（広島には圃場タブが無いため）
+  var funesToday = 0;
+  try{
+    var f = getFunesToday_(params);
+    if(f && f.matches && f.matches.length) funesToday = Number(f.matches[0].value) || 0;
+  }catch(e){}
+  var seisanFunes = 0;
+  try{
+    var s = seisanGet_(params);
+    if(s && s.totalFunes) seisanFunes = Number(s.totalFunes) || 0;
+  }catch(e){}
+  var totalFunes = funesToday + seisanFunes;
+  var budomari = (totalFunes > 0) ? (allKg / totalFunes) : null;
+
+  // 加工率＝発注書「進捗」シートのCS率を優先（読み取りのみ）。取得できなければ板集計にフォールバック
+  var orderCsRate = null;
+  try{
+    var prog = getProgressToday_(params);
+    if(prog && prog.columns){
+      var hit = prog.columns.filter(function(c){ return c.label.indexOf('CS率') >= 0; })[0];
+      if(hit && typeof hit.value === 'number') orderCsRate = hit.value;
+    }
+  }catch(e){}
+  var kakouRitsu = (orderCsRate != null) ? (orderCsRate * 100) : ((allKg > 0) ? (csKg / allKg * 100) : null);
+
+  // 終了目標時刻＝本日の総舟数（数量変更の上書きがあればそちら）÷（本日出勤人数×2舟/時）
+  var totalQtyAll = orders.reduce(function(sum, o){ return sum + Math.round(o.qty || 0); }, 0);
+  var targetFunes = (state.targetOverride != null) ? state.targetOverride : totalQtyAll;
+  var presentCount = 0;
+  try{ var sh2 = getHiroshimaShiftToday_(params); if(sh2 && !sh2.error) presentCount = sh2.presentCount; }catch(e){}
+  var finishTime = nzCalcFinish_(targetFunes, presentCount);
+
+  return {
+    sheet: base.sheet, date: date, rowFound: base.rowFound,
+    orders: orders, totalQty: base.totalQty, totalKg: base.totalKg,
+    targetOverride: state.targetOverride, targetFunes: targetFunes,
+    madeAllKg: allKg, madeCsKg: csKg, totalFunes: totalFunes,
+    budomari: budomari, kakouRitsu: kakouRitsu, finishTime: finishTime
   };
 }
 
@@ -1145,3 +1421,4 @@ function testMainStats(){ Logger.log(JSON.stringify(getMainStatsToday_({}), null
 function testShizaiAlerts(){ Logger.log(JSON.stringify(getShizaiAlerts_(), null, 2)); }
 function testShift(){ Logger.log(JSON.stringify(getHiroshimaShiftToday_({}), null, 2)); }
 function testHaichi(){ Logger.log(JSON.stringify(getHaichiGet_({}), null, 2)); }
+function testNizukuriFull(){ Logger.log(JSON.stringify(getNizukuriFull_({}), null, 2)); }
