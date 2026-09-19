@@ -113,6 +113,7 @@ function doPost(e){
     else if(action === 'shizaiSave')       out = saveShizaiState_(body);
     else if(action === 'shizaiBackupSave') out = saveShizaiBackup_(body);
     else if(action === 'haichiSave')       out = haichiSave_(body);   // ⑥ 配置図：本日の配置・欠勤上書き・応援追加
+    else if(action === 'haichiSkillSave')  out = haichiSkillSave_(body); // ⑥ 力量表：○/△/×をアプリから編集
     else out = { ok:false, error:'unknown action: ' + action };
   }catch(err){
     out = { ok:false, error:String(err && err.message || err) };
@@ -938,6 +939,27 @@ function haichiSkillSheet_(rosterNames){
     });
   }
   return sh;
+}
+// アプリの力量表タブから○/△/×を直接編集して保存する（1人×1ゾーンのセルだけ更新。行が無ければ追加）
+function haichiSkillSave_(body){
+  body = body || {};
+  var lock = LockService.getScriptLock();
+  try{ lock.waitLock(15000); }catch(e){ return { ok:false, error:'busy（他の保存処理中）' }; }
+  try{
+    var name = normText_(body.name || ''); if(!name) return { ok:false, error:'nameが空です' };
+    var zoneId = String(body.zoneId || '');
+    var value = String(body.value || '○');
+    var zones = CFG.HAICHI_ZONES || [];
+    var idx = -1;
+    for(var i = 0; i < zones.length; i++){ if(zones[i].id === zoneId) { idx = i; break; } }
+    if(idx < 0) return { ok:false, error:'不明なゾーンID: ' + zoneId };
+    var sh = haichiSkillSheet_([name]);   // 未登録ならこの呼び出しで全ゾーン○で追記される
+    var v = sh.getDataRange().getValues();
+    for(var r = 1; r < v.length; r++){
+      if(normText_(v[r][0]) === name){ sh.getRange(r + 1, 2 + idx).setValue(value); return { ok:true }; }
+    }
+    return { ok:false, error:'力量表に氏名が見つかりませんでした: ' + name };
+  } finally { try{ lock.releaseLock(); }catch(e){} }
 }
 function haichiReadSkills_(rosterNames){
   var sh = haichiSkillSheet_(rosterNames);
