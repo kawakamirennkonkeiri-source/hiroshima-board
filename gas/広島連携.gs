@@ -683,14 +683,19 @@ function getNizukuriFull_(params){
   params = params || {};
   var base = getNizukuriToday_(params);
   if(base.error) return base;
-  var date = base.date;
+  var date = base.date;   // クエリした注文行の納品日（複数日表示では今日以外の日もありうる）
+  // ⚠「本日作った分」の判定基準は常に実際のカレンダー上の今日＝todayReal（生産日）。納品日dateとは
+  //   別物＝「明日納品の注文を今日のうちに作った」場合、その注文行の“本日”欄にも正しく計上されるように
+  //   する（2026-09-22の複数日表示追加時、当初は log[date]＝納品日基準で作ってしまい、生産日を跨いだ
+  //   集計・進捗差分への反映が壊れる不具合になった。修正後は生産日=todayRealで統一）。
+  var todayReal = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
   var state = nzStateRead_(date);
   var logMap = nzLogReadAll_();
 
   var orders = base.orders.map(function(o){
     var key = nzOrderKey_(date, o);
     var log = logMap[key] || {};
-    var madeToday = Number(log[date]) || 0;
+    var madeToday = Number(log[todayReal]) || 0;
     var madeTotal = 0; Object.keys(log).forEach(function(d){ madeTotal += Number(log[d]) || 0; });
     var madePrev = madeTotal - madeToday;
     var totalQty = Math.round(o.qty || 0);
@@ -698,6 +703,7 @@ function getNizukuriFull_(params){
       cust: o.cust, kubun: o.kubun, nyusu: o.nyusu, qty: o.qty, kg: o.kg, unit: o.unit,
       key: key, state: state.status[key] || 'mikettei',
       madePrev: madePrev, madeToday: madeToday, rest: totalQty - madePrev - madeToday,
+      prodLog: log,   // 生産日ごとの内訳（累計修正UIのツールチップ・日付選択時のプリフィルに使用。読み取りのみ）
       isCS: !!(o.kubun && CFG.NZ_CS_KUBUN_RE.test(o.kubun))
     };
   });

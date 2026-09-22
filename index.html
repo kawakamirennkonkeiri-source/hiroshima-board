@@ -41,6 +41,7 @@
   .stat-card .val .u{ font-size:14px; color:var(--text-secondary); margin-left:4px; }
   .stat-card .sub{ font-size:11px; color:var(--text-secondary); font-weight:600; margin-top:6px; line-height:1.4; }
   .warn-box{ background:#fff6e6; border:1px solid #f0d38a; color:var(--amber); font-size:13px; font-weight:700; padding:10px 14px; border-radius:10px; margin-bottom:14px; }
+  .match-msg{ background:#e7f6e7; border:1.5px solid #7ecb7e; color:#1c7d1c; font-size:15px; font-weight:800; text-align:center; padding:14px; border-radius:12px; margin-bottom:14px; line-height:1.6; }
   .foot-note{ font-size:11px; color:var(--muted); margin-top:6px; line-height:1.7; }
   .section-ttl{ font-size:15px; font-weight:800; color:var(--text-primary); margin:22px 0 8px; }
   table.progress-tbl{ width:100%; border-collapse:collapse; background:var(--surface-1); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
@@ -99,6 +100,12 @@
   .nz-row .qc4 .rest.done .cs{ color:var(--green); }
   .nz-row .qc4 input{ width:100%; font-family:inherit; font-size:18px; font-weight:800; text-align:center; padding:3px 2px; border:1px solid var(--grid); border-radius:6px; font-variant-numeric:tabular-nums; }
   .nz-row .qc4 input.q-made{ color:#1c7d1c; }
+  .nz-row .qc4 .prev-edit-btn{ appearance:none; cursor:pointer; font-family:inherit; font-size:9px; font-weight:700; color:var(--blue); background:none; border:none; padding:3px 0 0; display:block; width:100%; }
+  .nz-row .prev-fix{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px; padding:8px 10px; background:var(--surface-0); border:1px dashed var(--grid); border-radius:8px; font-size:12px; }
+  .nz-row .prev-fix-lbl{ font-weight:700; color:var(--text-secondary); }
+  .nz-row .prev-fix input[type=date]{ font-family:inherit; font-size:12px; padding:4px 6px; border:1px solid var(--grid); border-radius:6px; }
+  .nz-row .prev-fix input[type=number]{ width:70px; font-family:inherit; font-size:13px; padding:4px 6px; border:1px solid var(--grid); border-radius:6px; text-align:right; font-variant-numeric:tabular-nums; }
+  .nz-row .qc4 .prev .cs{ cursor:help; }
 
   /* ===== 本日荷造りタブ：日付ナビゲーション（デフォ3日・＋1日・指定日ジャンプ。全PC共有） ===== */
   .nz-daynav{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
@@ -341,7 +348,8 @@
 <div id="view-skudiff" class="view">
   <div class="card">
     <h3>🔍 進捗差分（取引先ごと・c/s単位） <button class="nz-btn sub" style="margin-left:auto;" onclick="renderSkuDiff()">🔄 更新</button></h3>
-    <div class="empty-note" style="padding:0 0 12px;">発注書「進捗」シートの「荷造数」を取引先ごとに合算した値と、電子黒板の「本日作った分」（区分違いも取引先で合算）を突き合わせます。単位はどちらもc/s（ケース数）です。</div>
+    <div class="empty-note" style="padding:0 0 12px;">発注書「進捗」シートの「荷造数」を取引先ごとに合算した値と、電子黒板の「本日作った分」（本日荷造りタブに表示中の日付・区分違いも取引先で合算。区分がC・Sの注文は対象外）を突き合わせます。単位はどちらもc/s（ケース数）です。</div>
+    <div id="skudiff-match" class="match-msg" style="display:none;">✅ 一致しました！<br>今日もお疲れ様でした</div>
     <div class="sd-head"><div>取引先</div><div class="r">黒板 本日作った(c/s)</div><div class="r">進捗シート 荷造数(c/s)</div><div class="r">差（黒板−進捗）</div></div>
     <div id="skudiff-rows"></div>
     <div class="empty-note" id="skudiff-empty">本日のデータがまだありません。</div>
@@ -497,7 +505,9 @@
     if(name === 'haichi') haichiOnOpen();
     if(name === 'hojo') hojoOnOpen();
     if(name === 'funes') fnOnOpen();
-    if(name === 'skudiff') renderSkuDiff();
+    // 🔍進捗差分は本日荷造りタブと同じ複数日データ（NZ_DAY_ITEMS）を見るため、こちらを開いた時も
+    // 取得する（本日荷造りタブを一度も開いていなくても正しい値が出るように）。
+    if(name === 'skudiff'){ renderSkuDiff(); nzLoadDaysNow_(); }
   }
 
   function tickClock(){
@@ -540,10 +550,12 @@
     var el = document.getElementById('nz-days-label'); if(el) el.textContent = String(NZ_DAYS_WANTED);
     var j = document.getElementById('nz-jump'); if(j && !NZ_VIEW_DIRTY) j.value = NZ_JUMP_DATE || '';
   }
-  // 本日荷造りタブが今画面に出ているか（配置図/生産者タブと同様、重い取得はタブを開いている時だけ行う）
+  // 本日荷造り／🔍進捗差分タブが今画面に出ているか（配置図/生産者タブと同様、重い取得はタブを開いている
+  //   時だけ行う。🔍進捗差分も同じ複数日データ(NZ_DAY_ITEMS)を見るため対象に含める）
   function nzTabActive_(){
-    var v = document.getElementById('view-nizukuri');
-    return !!(v && v.classList.contains('show'));
+    var v1 = document.getElementById('view-nizukuri');
+    var v2 = document.getElementById('view-skudiff');
+    return !!((v1 && v1.classList.contains('show')) || (v2 && v2.classList.contains('show')));
   }
   // 表示ウィンドウぶん（複数日）の注文一覧を取得して描画。タブを開いた時・日数変更/ジャンプ操作の直後・
   //   タブを開いている間の30秒ごと（下のsetIntervalから）に呼ぶ。
@@ -656,6 +668,7 @@
     var dates = nzViewDates_();
     NZ_DAY_ITEMS = (daysArr || []).map(function(d, i){ return { date: dates[i] || (d && d.date) || '', data: d }; });
     nzRenderDayItems_();
+    renderSkuDiff();   // 🔍進捗差分は同じNZ_DAY_ITEMSを見ているので、新しいデータが届くたびに再計算する
   }
   function nzRenderDayItems_(){
     var wrap = document.getElementById('nizukuri-days');
@@ -685,6 +698,7 @@
   function nzRowHtml_(o, idx){
     var isKg = o.unit === 'kg';
     var U = isKg ? 'kg' : 'c/s';
+    var yISO = nzYesterdayISO_();
     return '<div class="nz-row' + (o.state === 'sakusei' ? ' is-done' : '') + (o.isNew ? ' is-new' : '') + '">' +
       '<div class="nz-r1">' +
         '<div class="idx">' + (idx + 1) + '</div>' +
@@ -694,11 +708,84 @@
       '</div>' +
       '<div class="qc4">' +
         '<div class="qi total"><span class="ql">合計</span><span class="cs">' + escHtml_(String(Math.round(o.qty || 0))) + '<small>' + U + '</small></span></div>' +
-        '<div class="qi prev"><span class="ql">累計</span><span class="cs">' + escHtml_(String(o.madePrev || 0)) + '<small>' + U + '</small></span></div>' +
+        '<div class="qi prev"><span class="ql">累計</span><span class="cs prev-v" title="' + escAttr_(nzPrevTooltipText_(o)) + '">' + escHtml_(String(o.madePrev || 0)) + '<small>' + U + '</small></span><button type="button" class="prev-edit-btn" onclick="nzPrevFixToggle(this)">✎ 直す</button></div>' +
         '<div class="qi made"><span class="ql">本日</span><input class="q-made" type="number" min="0" step="1" value="' + (o.madeToday || '') + '" data-key="' + escAttr_(o.key) + '" oninput="nzMadeInput(this)" onchange="nzMadeCommit(this)"></div>' +
         '<div class="qi rest' + (o.rest <= 0 ? ' done' : '') + '"><span class="ql">のこり</span><span class="cs rest-v">' + escHtml_(String(o.rest)) + '<small>' + U + '</small></span></div>' +
       '</div>' +
+      '<div class="prev-fix" style="display:none;">' +
+        '<span class="prev-fix-lbl">過去に作った分を直す：</span>' +
+        '<input type="date" class="q-prev-date" max="' + yISO + '" value="' + yISO + '" data-key="' + escAttr_(o.key) + '" onchange="nzPrevDatePick(this)">' +
+        '<input type="number" class="q-prev-amt" min="0" step="1" placeholder="0" data-key="' + escAttr_(o.key) + '" oninput="nzPrevAmtInput(this)" onchange="nzPrevAmtCommit(this)">' +
+        '<small>' + U + '</small>' +
+      '</div>' +
     '</div>';
+  }
+  // 「累計」欄のツールチップ：本日以外の生産日ごとの内訳（センター電子黒板の日別内訳表示に相当）
+  function nzPrevTooltipText_(o){
+    var log = o.prodLog || {}, td = todayStr_();
+    var parts = Object.keys(log).filter(function(d){ return d !== td && Number(log[d]) > 0; }).sort().map(function(d){ return d + '：' + log[d]; });
+    return parts.length ? parts.join(' / ') : '内訳なし';
+  }
+  function nzYesterdayISO_(){ return nzAddDaysISO_(todayStr_(), -1); }
+  // 「累計」欄の✎ボタン：過去の生産日を選んで数量を直接直せるパネルの開閉（センターの`.prev-fix`に相当）
+  function nzPrevFixToggle(btn){
+    var row = btn.closest('.nz-row'); if(!row) return;
+    var panel = row.querySelector('.prev-fix'); if(!panel) return;
+    var show = (panel.style.display === 'none' || panel.style.display === '');
+    panel.style.display = show ? 'flex' : 'none';
+    if(show){ var dateInp = panel.querySelector('.q-prev-date'); if(dateInp) nzPrevDatePick(dateInp); }
+  }
+  // 日付を選ぶと、その日に既に入っている数量を読み込んで表示（同じ日を選べば上書き＝行が増えない）
+  function nzPrevDatePick(dateInp){
+    var key = dateInp.getAttribute('data-key');
+    var item = nzFindItemByKey_(key); if(!item || !item.data) return;
+    var o = (item.data.orders || []).filter(function(x){ return x.key === key; })[0]; if(!o) return;
+    var panel = dateInp.closest('.prev-fix');
+    var amtInp = panel ? panel.querySelector('.q-prev-amt') : null;
+    if(amtInp){ var v = (o.prodLog || {})[dateInp.value]; amtInp.value = (v != null && Number(v) > 0) ? Number(v) : ''; }
+  }
+  // 入力のたびに「累計」「のこり」をその場で書き換える（本日欄の入力と同じ即時反映の考え方）
+  function nzPrevAmtInput(amtInp){
+    var key = amtInp.getAttribute('data-key');
+    var item = nzFindItemByKey_(key); if(!item || !item.data) return;
+    var o = (item.data.orders || []).filter(function(x){ return x.key === key; })[0]; if(!o) return;
+    var panel = amtInp.closest('.prev-fix');
+    var dateInp = panel ? panel.querySelector('.q-prev-date') : null;
+    var d = dateInp ? dateInp.value : ''; if(!d) return;
+    var newVal = Math.max(0, Math.round(Number(amtInp.value) || 0));
+    o.prodLog = o.prodLog || {};
+    var oldVal = Number(o.prodLog[d]) || 0;
+    var delta = newVal - oldVal;
+    if(!delta) return;
+    o.prodLog[d] = newVal;
+    o.madePrev = Math.max(0, (o.madePrev || 0) + delta);
+    o.rest = Math.round(o.qty || 0) - o.madePrev - (o.madeToday || 0);
+    var row = amtInp.closest('.nz-row');
+    var prevVal = row ? row.querySelector('.prev-v') : null;
+    var restVal = row ? row.querySelector('.rest-v') : null;
+    var restLine = row ? row.querySelector('.qi.rest') : null;
+    var U = o.unit === 'kg' ? 'kg' : 'c/s';
+    if(prevVal){ prevVal.innerHTML = escHtml_(String(o.madePrev)) + '<small>' + U + '</small>'; prevVal.title = nzPrevTooltipText_(o); }
+    if(restVal) restVal.innerHTML = escHtml_(String(o.rest)) + '<small>' + U + '</small>';
+    if(restLine) restLine.classList.toggle('done', o.rest <= 0);
+  }
+  var nzPrevSaveTimers = {};
+  function nzPrevAmtCommit(amtInp){
+    var key = amtInp.getAttribute('data-key');
+    var panel = amtInp.closest('.prev-fix');
+    var dateInp = panel ? panel.querySelector('.q-prev-date') : null;
+    var d = dateInp ? dateInp.value : ''; if(!d) return;
+    var item = nzFindItemByKey_(key); if(!item || !item.data) return;
+    var o = (item.data.orders || []).filter(function(x){ return x.key === key; })[0]; if(!o) return;
+    var cases = Math.max(0, Math.round(Number(amtInp.value) || 0));
+    var tkey = key + '|' + d;
+    if(nzPrevSaveTimers[tkey]) clearTimeout(nzPrevSaveTimers[tkey]);
+    nzPrevSaveTimers[tkey] = setTimeout(function(){
+      gasPost_('nizukuriMadeSave', {
+        date: item.date, prodDate: d, cust: o.cust, kubun: o.kubun || '',
+        nyusu: o.nyusu || 0, cases: cases, by: deviceLabel_()
+      }, function(dres, err){});
+    }, 500);
   }
   // 表示中の日付セクションから、キー（date|取引先|区分|入数）の日付部分で該当セクションを引く
   function nzFindItemByKey_(key){
@@ -713,6 +800,7 @@
     if(!o) return;
     var cases = Math.max(0, Math.round(Number(el.value) || 0));
     o.madeToday = cases;
+    o.prodLog = o.prodLog || {}; o.prodLog[todayStr_()] = cases;
     o.rest = Math.round(o.qty || 0) - (o.madePrev || 0) - cases;
     var row = el.closest('.nz-row');
     var restLine = row ? row.querySelector('.qi.rest') : null;
@@ -732,8 +820,11 @@
     var key = o.key;
     if(nzMadeSaveTimers[key]) clearTimeout(nzMadeSaveTimers[key]);
     nzMadeSaveTimers[key] = setTimeout(function(){
+      // prodDate（生産日）は常に実際の今日＝入力した時点のカレンダー日（＝todayStr_()）。
+      // date（納品日・注文行の日付）と混同すると、明日以降の注文を前倒しで作った分が
+      // 「本日作った分」として拾われず、進捗差分にも反映されない不具合になる（2026-09-22修正）。
       gasPost_('nizukuriMadeSave', {
-        date: date, prodDate: date, cust: o.cust, kubun: o.kubun || '',
+        date: date, prodDate: todayStr_(), cust: o.cust, kubun: o.kubun || '',
         nyusu: o.nyusu || 0, cases: o.madeToday || 0, by: deviceLabel_()
       }, function(d, err){});
     }, 900);
@@ -1351,13 +1442,23 @@
   }
 
   /* ===== 進捗差分タブ ===== */
+  // データ源は本日荷造りタブと同じ複数日ウィンドウ（NZ_DAY_ITEMS）。以前はLAST_NIZUKURI（本日納品分のみ）
+  // だけを見ていたため、明日以降の注文を前倒しで作った分（本日作った＝実際の生産日は今日）が
+  // 反映されなかった（2026-09-22修正・詳細はnzPushMade_のコメント参照）。
+  // 区分がC/S（isCS）の注文は、曽我さんの指示により進捗シートとの一致確認の対象から除外する。
   function computeClientDiff_(){
     var madeByClient = {};
-    ((LAST_NIZUKURI && LAST_NIZUKURI.orders) || []).forEach(function(o){
-      if(o.unit === 'kg') return;   // 個人注文・その他サンプル(kg単位)は進捗シート側に対応する行が無いため対象外
-      var made = Number(o.madeToday) || 0;
-      if(!made) return;
-      madeByClient[o.cust] = (madeByClient[o.cust] || 0) + made;
+    var seenKeys = {};
+    NZ_DAY_ITEMS.forEach(function(item){
+      var d = item.data;
+      ((d && !d.error && d.orders) || []).forEach(function(o){
+        if(o.unit === 'kg') return;   // 個人注文・その他サンプル(kg単位)は進捗シート側に対応する行が無いため対象外
+        if(o.isCS) return;            // 区分C/Sは対象外
+        if(seenKeys[o.key]) return; seenKeys[o.key] = 1;
+        var made = Number(o.madeToday) || 0;
+        if(!made) return;
+        madeByClient[o.cust] = (madeByClient[o.cust] || 0) + made;
+      });
     });
     var progress = LAST_PROGRESS_BY_CLIENT || {};
     var names = {};
@@ -1374,8 +1475,18 @@
     if(!wrap) return;   // タブ未描画でも落ちないように
     var rows = computeClientDiff_();
     var empty = document.getElementById('skudiff-empty');
-    if(!rows.length){ wrap.innerHTML = ''; if(empty) empty.style.display = 'block'; return; }
+    var matchBox = document.getElementById('skudiff-match');
+    if(!rows.length){
+      wrap.innerHTML = ''; if(empty) empty.style.display = 'block';
+      if(matchBox) matchBox.style.display = 'none';
+      return;
+    }
     if(empty) empty.style.display = 'none';
+    // 何か1件でも動きがあった上で全て一致している時だけ「お疲れ様」を出す（何も入力していないだけの
+    // 0対0を「一致」扱いで祝ってしまわないようにするガード）
+    var hasActivity = rows.some(function(r){ return r.made > 0 || r.order > 0; });
+    var allOk = hasActivity && rows.every(function(r){ return Math.abs(r.diff) < 0.5; });
+    if(matchBox) matchBox.style.display = allOk ? 'block' : 'none';
     wrap.innerHTML = rows.map(function(r){
       var ok = Math.abs(r.diff) < 0.5;
       var diffTxt = (r.diff > 0 ? '+' : '') + r.diff;
