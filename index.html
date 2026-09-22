@@ -156,6 +156,11 @@
   .seisan-hint{ margin-top:16px; font-size:12px; color:var(--muted); line-height:1.6; }
 
   /* ===== 配置図タブ ===== */
+  .haichi-subtabs{ display:flex; gap:4px; margin-bottom:6px; border-bottom:1px solid var(--border); overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  .haichi-subtabs button{ appearance:none; cursor:pointer; font-family:inherit; font-size:13px; font-weight:800; border:none; background:transparent; color:var(--text-secondary); padding:9px 14px; border-bottom:3px solid transparent; flex:0 0 auto; white-space:nowrap; }
+  .haichi-subtabs button.sel{ color:var(--blue-deep); border-bottom-color:var(--blue-deep); }
+  .haichi-subpanel{ display:none; padding-top:14px; }
+  .haichi-subpanel.show{ display:block; }
   .haichi-top{ display:flex; align-items:center; gap:14px; flex-wrap:wrap; margin-bottom:14px; }
   .haichi-btn{ appearance:none; cursor:pointer; font-family:inherit; font-size:14px; font-weight:800; border:none; background:var(--blue); color:#fff; padding:10px 18px; border-radius:20px; }
   .haichi-btn:active{ transform:scale(0.97); }
@@ -346,36 +351,51 @@
   </div>
 </div>
 
-<!-- ===== 配置図タブ ===== -->
+<!-- ===== 配置図タブ（センター電子黒板と同じく「配置図／力量表／ゾーン設定」の3サブタブ構成） ===== -->
 <div id="view-haichi" class="view">
-  <div class="haichi-top">
-    <button class="haichi-btn" onclick="haichiAutoAssign()">🔀 自動配置</button>
-    <span class="haichi-status" id="haichi-status"></span>
+  <div class="haichi-subtabs">
+    <button class="haichi-subtab sel" id="hsub-tab-board" onclick="haichiSwitchSub('board')">📍 配置図</button>
+    <button class="haichi-subtab" id="hsub-tab-skill" onclick="haichiSwitchSub('skill')">📊 力量表</button>
+    <button class="haichi-subtab" id="hsub-tab-zone" onclick="haichiSwitchSub('zone')">⚙ ゾーン設定</button>
+  </div>
+  <span class="haichi-status" id="haichi-status"></span>
+
+  <!-- ----- 📍配置図 ----- -->
+  <div id="hsub-board" class="haichi-subpanel show">
+    <div class="haichi-top">
+      <button class="haichi-btn" onclick="haichiAutoAssign()">🔀 自動配置</button>
+    </div>
+
+    <div class="haichi-section-ttl">本日の出勤者（シフト表の〇が初期値。チェックを外すと欠勤扱い）</div>
+    <div class="haichi-attend" id="haichi-attend"></div>
+    <div class="haichi-add">
+      <input id="haichi-newname" type="text" placeholder="応援の人の名前を入れてEnter" onkeydown="if(event.key==='Enter')haichiAddExtra();">
+      <button class="haichi-btn sub" onclick="haichiAddExtra()">＋ 応援を追加</button>
+    </div>
+
+    <div class="haichi-section-ttl">工程ごとの配置（未配置の人をタップ→空き枠をタップで配置。配置済みをタップで未配置に戻す）</div>
+    <div class="haichi-board-wrap">
+      <div class="haichi-board" id="haichi-board"></div>
+    </div>
+    <div class="seisan-hint">定員・自動配置の優先順は「⚙ ゾーン設定」タブで調整できます。</div>
   </div>
 
-  <div class="haichi-section-ttl">本日の出勤者（シフト表の〇が初期値。チェックを外すと欠勤扱い）</div>
-  <div class="haichi-attend" id="haichi-attend"></div>
-  <div class="haichi-add">
-    <input id="haichi-newname" type="text" placeholder="応援の人の名前を入れてEnter" onkeydown="if(event.key==='Enter')haichiAddExtra();">
-    <button class="haichi-btn sub" onclick="haichiAddExtra()">＋ 応援を追加</button>
+  <!-- ----- 📊力量表（力量○/△/×・配置優先の番号を同じ場所で編集） ----- -->
+  <div id="hsub-skill" class="haichi-subpanel">
+    <div class="haichi-section-ttl">🎛 力量表（タップで ○→△→×→○ と切り替え。×の工程には自動配置されません）</div>
+    <div id="haichi-skill-wrap"></div>
+    <div class="haichi-skill-hint">保存先：【広島】電子黒板データ内「力量表」シート（このアプリから編集できます）。</div>
+
+    <div class="haichi-section-ttl">🔢 配置優先（タップで空欄→1→2→3→4→5→×→空欄 と切り替え。数字が小さいほど自動配置で先に埋まります。×はそのゾーンに配置しません。空欄は配置できますが優先されず最後に回されます）</div>
+    <div id="haichi-prio-wrap"></div>
+    <div class="haichi-skill-hint">保存先：【広島】電子黒板データ内「配置優先」シート（このアプリから編集できます）。「🔀 自動配置」ボタンは、この優先番号が小さい人から順にゾーンへ配置します。</div>
   </div>
 
-  <div class="haichi-section-ttl">工程ごとの配置（未配置の人をタップ→空き枠をタップで配置。配置済みをタップで未配置に戻す）</div>
-  <div class="haichi-board-wrap">
-    <div class="haichi-board" id="haichi-board"></div>
+  <!-- ----- ⚙ゾーン設定（定員・ゾーンを埋める順番） ----- -->
+  <div id="hsub-zone" class="haichi-subpanel">
+    <div class="haichi-section-ttl">⚙ ゾーン設定（定員・ゾーンの優先度。変更するとその場で保存され、配置図と自動配置に反映されます）</div>
+    <div id="haichi-zonecfg-wrap"></div>
   </div>
-  <div class="seisan-hint">定員は下の「⚙ ゾーン設定」からこのアプリで編集できます。</div>
-
-  <div class="haichi-section-ttl">⚙ ゾーン設定（定員。変更するとその場で保存され、配置図の枠数に反映されます）</div>
-  <div id="haichi-zonecfg-wrap"></div>
-
-  <div class="haichi-section-ttl">🎛 力量表（タップで ○→△→×→○ と切り替え。×の工程には自動配置されません）</div>
-  <div id="haichi-skill-wrap"></div>
-  <div class="haichi-skill-hint">保存先：【広島】電子黒板データ内「力量表」シート（このアプリから編集できます）。</div>
-
-  <div class="haichi-section-ttl">🔢 配置優先（タップで空欄→1→2→3→4→5→×→空欄 と切り替え。数字が小さいほど自動配置で先に埋まります。×はそのゾーンに配置しません。空欄は配置できますが優先されず最後に回されます）</div>
-  <div id="haichi-prio-wrap"></div>
-  <div class="haichi-skill-hint">保存先：【広島】電子黒板データ内「配置優先」シート（このアプリから編集できます）。「🔀 自動配置」ボタンは、この優先番号が小さい人から順にゾーンへ配置します。</div>
 </div>
 
 <!-- ===== 圃場（畑）タブ（手入力のみ。生産DX連携は広島には無いため簡易版） ===== -->
@@ -472,6 +492,16 @@
     return '<div class="stat-card"><div class="lbl">' + escHtml_(c.lbl) + '</div><div class="val">' + escHtml_(String(c.val)) + (c.u ? '<span class="u">' + escHtml_(c.u) + '</span>' : '') + '</div>' + (c.sub ? '<div class="sub">' + escHtml_(c.sub) + '</div>' : '') + '</div>';
   }
 
+  // ①本日の荷造り舟数の既定値＝発注書の荷造り舟数＋生産者タブの収穫舟数合計。
+  //   電子黒板のタイル・本日の合計数量（数量変更の既定に戻す）・終了目標時刻の計算元をこの1つにそろえる。
+  //   発注書の荷造り舟数が未取得の間はnullを返す（既定に戻す操作では0扱いにする）。
+  function nzDefaultTargetFunes_(){
+    var mstats = (LAST_MAINSTATS && !LAST_MAINSTATS.error && LAST_MAINSTATS.stats) ? LAST_MAINSTATS.stats : {};
+    var seiFune = (LAST_SEISAN && LAST_SEISAN.totalFunes) ? Number(LAST_SEISAN.totalFunes) : 0;
+    if(!('荷造り舟数' in mstats) || mstats['荷造り舟数'] === '') return null;
+    return (Number(mstats['荷造り舟数']) || 0) + seiFune;
+  }
+
   // ①②③ 本日の予測・予定（本日出勤人数・荷造り舟数・荷造り予定㎏・終了目標時刻）をまとめて表示
   function renderMainStats_(){
     var box = document.getElementById('main-stats');
@@ -485,9 +515,8 @@
     var mstats = (LAST_MAINSTATS && !LAST_MAINSTATS.error && LAST_MAINSTATS.stats) ? LAST_MAINSTATS.stats : {};
     // ① 本日の荷造り舟数＝発注書の荷造り舟数（予定）＋生産者タブの収穫舟数合計
     if('荷造り舟数' in mstats){
-      var baseFune = (mstats['荷造り舟数'] === '') ? null : Number(mstats['荷造り舟数']);
-      var seiFune = (LAST_SEISAN && LAST_SEISAN.totalFunes) ? Number(LAST_SEISAN.totalFunes) : 0;
-      cards.push({ lbl: '本日の荷造り舟数', val: (baseFune != null ? (baseFune + seiFune) : '―'), u: '舟', sub: '発注書の荷造り舟数 + 生産者タブの収穫舟数' });
+      var defaultFune = nzDefaultTargetFunes_();
+      cards.push({ lbl: '本日の荷造り舟数', val: (defaultFune != null ? defaultFune : '―'), u: '舟', sub: '発注書の荷造り舟数 + 生産者タブの収穫舟数' });
     }
 
     // ② 荷造り予定㎏（本日の注文一覧の合計。発注書シートより）
@@ -630,7 +659,7 @@
   function nzQtyClear(){
     if(!LAST_NIZUKURI) return;
     LAST_NIZUKURI.targetOverride = null;
-    LAST_NIZUKURI.targetFunes = (LAST_NIZUKURI.orders || []).reduce(function(s, o){ return s + Math.round(o.qty || 0); }, 0);
+    LAST_NIZUKURI.targetFunes = nzDefaultTargetFunes_() || 0;
     renderMainStats_(); nzRenderQtyBar_(LAST_NIZUKURI); fnRender();
     document.getElementById('nz-qty-edit').style.display = 'none';
     nzPushState_();
@@ -870,6 +899,13 @@
   var haichiAddingZone = null;
 
   function haichiOnOpen(){ haichiLoadLive(); }
+  // センター電子黒板と同じ「配置図／力量表／ゾーン設定」の3サブタブ切替
+  function haichiSwitchSub(name){
+    document.querySelectorAll('.haichi-subpanel').forEach(function(p){ p.classList.remove('show'); });
+    document.querySelectorAll('.haichi-subtabs button').forEach(function(b){ b.classList.remove('sel'); });
+    var panel = document.getElementById('hsub-' + name); if(panel) panel.classList.add('show');
+    var tab = document.getElementById('hsub-tab-' + name); if(tab) tab.classList.add('sel');
+  }
 
   function haichiLoadLive(){
     var el = document.getElementById('haichi-status');
@@ -978,11 +1014,12 @@
     haichiRender(); haichiPushSave();
   }
 
-  // ⑨ 配置優先の番号（小さいほど先）でゾーンごとに候補者を並べ、定員まで詰める。
-  //   番号が同じ・どちらも未設定の場合は出勤者一覧の並び順のまま（安定ソート。乱数タイブレークはしない簡易版）。
+  // ⑨⑩ ゾーンは「⚙ ゾーン設定」の優先度（小さいほど先に埋める）順に処理し、各ゾーンでは配置優先の
+  //   番号（小さいほど先）で候補者を並べて定員まで詰める。番号が同じ・どちらも未設定の場合は出勤者
+  //   一覧の並び順のまま（安定ソート。乱数タイブレークはしない簡易版）。
   function haichiAutoAssign(){
     if(!HAICHI) return;
-    var zones = HAICHI.zones;
+    var zones = HAICHI.zones.slice().sort(function(a, b){ return (a.priority || 99) - (b.priority || 99); });
     var assignment = {}; zones.forEach(function(z){ assignment[z.id] = []; });
     var placed = {};
     var attending = haichiAttendingNames_();
@@ -1055,25 +1092,29 @@
       }).join('') : '') + '</div></div>';
     box.innerHTML = html;
   }
-  // ⑩ ゾーン設定（定員）：これまでスプレッドシート直接編集のみだったが、力量表・配置優先と同じく
-  //   アプリから編集できるようにする（数字を変えたその場で保存＋配置図の枠数に反映）。
+  // ⑩ ゾーン設定（定員・優先度）：これまでスプレッドシート直接編集のみだったが、力量表・配置優先と
+  //   同じくアプリから編集できるようにする（数字を変えたその場で保存＋配置図の枠数・自動配置の順番に反映）。
   function haichiRenderZoneCfg_(){
     var box = document.getElementById('haichi-zonecfg-wrap'); if(!box) return;
+    var numInput = function(i, field, val){
+      return '<input type="number" min="' + (field === 'priority' ? 1 : 0) + '" step="1" value="' + val + '" style="width:64px;text-align:center;font-family:inherit;font-size:14px;font-weight:800;padding:5px;border:1px solid var(--grid);border-radius:6px;" onchange="haichiZoneCfgSet(' + i + ',\'' + field + '\',this.value)">';
+    };
     var rows = HAICHI.zones.map(function(z, i){
-      return '<tr><td>' + escHtml_(z.label) + '</td><td><input type="number" min="0" step="1" value="' + (z.capacity || 0) + '" style="width:64px;text-align:center;font-family:inherit;font-size:14px;font-weight:800;padding:5px;border:1px solid var(--grid);border-radius:6px;" onchange="haichiZoneCfgSet(' + i + ',this.value)"></td></tr>';
+      return '<tr><td>' + escHtml_(z.label) + '</td><td>' + numInput(i, 'capacity', z.capacity || 0) + '</td><td>' + numInput(i, 'priority', z.priority || (i + 1)) + '</td></tr>';
     }).join('');
-    box.innerHTML = '<table class="haichi-skill-tbl"><thead><tr><th>ゾーン名</th><th>定員（人数）</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    box.innerHTML = '<table class="haichi-skill-tbl"><thead><tr><th>ゾーン名</th><th>定員（人数）</th><th>優先度<br><span style="font-weight:600;color:var(--muted);font-size:10px;">小さいほど自動配置で先に埋まる</span></th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
-  function haichiZoneCfgSet(i, val){
+  function haichiZoneCfgSet(i, field, val){
     var z = HAICHI.zones[i]; if(!z) return;
-    var n = Math.max(0, Math.round(Number(val) || 0));
-    z.capacity = n;
+    var n = Math.max((field === 'priority' ? 1 : 0), Math.round(Number(val) || (field === 'priority' ? 1 : 0)));
+    z[field] = n;
     haichiRenderBoard_();
-    gasPost_('haichiZoneCfgSave', { zoneId: z.id, capacity: n }, function(d, err){
+    gasPost_('haichiZoneCfgSave', { zoneId: z.id, field: field, value: n }, function(d, err){
       var el = document.getElementById('haichi-status');
+      var label = (field === 'priority') ? '優先度' : '定員';
       if(!el) return;
-      if(d && d.ok){ el.textContent = '🟢 定員を保存しました（' + z.label + '＝' + n + '人）'; }
-      else { el.textContent = '🟡 定員の保存に失敗しました（' + ((d && d.error) || err || '') + '）'; }
+      if(d && d.ok){ el.textContent = '🟢 ' + label + 'を保存しました（' + z.label + '＝' + n + '）'; }
+      else { el.textContent = '🟡 ' + label + 'の保存に失敗しました（' + ((d && d.error) || err || '') + '）'; }
     });
   }
   function haichiCycleSkill_(v){ return v === '○' ? '△' : (v === '△' ? '×' : '○'); }

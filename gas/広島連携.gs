@@ -702,6 +702,14 @@ function getNizukuriFull_(params){
     if(o.isCS) csKg += kg;
   });
 
+  var mstats = {};
+  try{ var ms = getMainStatsToday_(params); if(ms && ms.stats) mstats = ms.stats; }catch(e){}
+  var seisanFunes = 0;
+  try{
+    var s = seisanGet_(params);
+    if(s && s.totalFunes) seisanFunes = Number(s.totalFunes) || 0;
+  }catch(e){}
+
   // 舟数（歩留まりの分母）＝圃場（畑）タブの合計＋生産者タブの収穫舟数合計
   //   （センター電子黒板と同じ考え方＝発注書のセルではなく現場の入力を実績として使う。2026-09-22）。
   //   圃場タブがまだ入力されていない日は、従来通り発注書「収穫舟数」列（mainStats経由）を暫定値として使う。
@@ -710,18 +718,7 @@ function getNizukuriFull_(params){
     var h = hojoGet_(params);
     if(h && h.total) hojoFunes = Number(h.total) || 0;
   }catch(e){}
-  var seisanFunes = 0;
-  try{
-    var s = seisanGet_(params);
-    if(s && s.totalFunes) seisanFunes = Number(s.totalFunes) || 0;
-  }catch(e){}
-  var fallbackFunes = 0;
-  if(hojoFunes <= 0){
-    try{
-      var ms = getMainStatsToday_(params);
-      if(ms && ms.stats && ms.stats['収穫舟数'] != null && ms.stats['収穫舟数'] !== '') fallbackFunes = Number(ms.stats['収穫舟数']) || 0;
-    }catch(e){}
-  }
+  var fallbackFunes = (mstats['収穫舟数'] != null && mstats['収穫舟数'] !== '') ? (Number(mstats['収穫舟数']) || 0) : 0;
   var totalFunes = (hojoFunes > 0 ? hojoFunes : fallbackFunes) + seisanFunes;
   var budomari = (totalFunes > 0) ? (allKg / totalFunes) : null;
 
@@ -736,9 +733,11 @@ function getNizukuriFull_(params){
   }catch(e){}
   var kakouRitsu = (orderCsRate != null) ? (orderCsRate * 100) : ((allKg > 0) ? (csKg / allKg * 100) : null);
 
-  // 終了目標時刻＝本日の総舟数（数量変更の上書きがあればそちら）÷（本日出勤人数×2舟/時）
-  var totalQtyAll = orders.reduce(function(sum, o){ return sum + Math.round(o.qty || 0); }, 0);
-  var targetFunes = (state.targetOverride != null) ? state.targetOverride : totalQtyAll;
+  // 終了目標時刻＝本日の荷造り舟数（発注書の荷造り舟数＋生産者タブの収穫舟数合計。数量変更の上書きが
+  //   あればそちら）÷（本日出勤人数×2舟/時）。電子黒板の「本日の荷造り舟数」タイルと同じ計算式にそろえる（2026-09-22）。
+  var baseNizukuriFune = (mstats['荷造り舟数'] != null && mstats['荷造り舟数'] !== '') ? (Number(mstats['荷造り舟数']) || 0) : 0;
+  var defaultTargetFunes = baseNizukuriFune + seisanFunes;
+  var targetFunes = (state.targetOverride != null) ? state.targetOverride : defaultTargetFunes;
   var presentCount = 0;
   try{ var sh2 = getHiroshimaShiftToday_(params); if(sh2 && !sh2.error) presentCount = sh2.presentCount; }catch(e){}
   var finishTime = nzCalcFinish_(targetFunes, presentCount);
@@ -1527,7 +1526,8 @@ function haichiReadPrio_(rosterNames){
   return prio;
 }
 
-// ---- 配置設定（ゾーンID・表示名・定員。スプレッドシート直接編集に加えて、アプリの「⚙ ゾーン設定」からも編集可能） ----
+// ---- 配置設定（ゾーンID・表示名・定員・優先度。スプレッドシート直接編集に加えて、
+//      アプリの「⚙ ゾーン設定」からも編集可能。優先度＝自動配置でゾーンを埋める順番（数字が小さいほど先）） ----
 function haichiCfgSheet_(){
   var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
   var name = CFG.HAICHI_CFG_SHEET || '配置設定';
@@ -1535,10 +1535,21 @@ function haichiCfgSheet_(){
   var sh = ss.getSheetByName(name);
   if(!sh){
     sh = ss.insertSheet(name);
-    sh.appendRow(['ゾーンID', '表示名', '定員']);
+    sh.appendRow(['ゾーンID', '表示名', '定員', '優先度']);
     var defaultCap = CFG.HAICHI_DEFAULT_CAPACITY || {};
-    zones.forEach(function(z){ sh.appendRow([z.id, z.label, defaultCap[z.id] || 2]); });
+    zones.forEach(function(z, i){ sh.appendRow([z.id, z.label, defaultCap[z.id] || 2, i + 1]); });
     try{ sh.setFrozenRows(1); }catch(e){}
+    return sh;
+  }
+  // 既存シートに「優先度」列（D列）が無い場合は追加し、既存の行順を初期値として埋める（後方互換・1回だけ）
+  if(sh.getLastColumn() < 4 || String(sh.getRange(1, 4).getValue() || '') !== '優先度'){
+    sh.getRange(1, 4).setValue('優先度');
+    var last = sh.getLastRow();
+    if(last >= 2){
+      var col = sh.getRange(2, 4, last - 1, 1).getValues();
+      for(var r = 0; r < col.length; r++){ if(col[r][0] === '' || col[r][0] == null) col[r][0] = r + 1; }
+      sh.getRange(2, 4, last - 1, 1).setValues(col);
+    }
   }
   return sh;
 }
@@ -1546,23 +1557,30 @@ function haichiReadZoneCfg_(){
   var sh = haichiCfgSheet_();
   var v = sh.getDataRange().getValues();
   var zones = CFG.HAICHI_ZONES || [];
-  var capById = {};
+  var capById = {}, prioById = {};
   for(var r = 1; r < v.length; r++){
     var id = normText_(v[r][0]); if(!id) continue;
     capById[id] = Number(v[r][2]) || 0;
+    prioById[id] = Number(v[r][3]) || 0;
   }
-  return zones.map(function(z){
-    return { id: z.id, label: z.label, capacity: (z.id in capById) ? capById[z.id] : 2 };
+  return zones.map(function(z, i){
+    return {
+      id: z.id, label: z.label,
+      capacity: (z.id in capById) ? capById[z.id] : 2,
+      priority: (prioById[z.id] > 0) ? prioById[z.id] : (i + 1)
+    };
   });
 }
-// ⑩ アプリの「⚙ ゾーン設定」から定員を編集して保存する（1ゾーンの定員だけ更新。行が無ければ追加）
+// ⑩ アプリの「⚙ ゾーン設定」から定員・優先度を編集して保存する（1ゾーンの1項目だけ更新。行が無ければ追加）
 function haichiZoneCfgSave_(body){
   body = body || {};
   var lock = LockService.getScriptLock();
   try{ lock.waitLock(15000); }catch(e){ return { ok:false, error:'busy（他の保存処理中）' }; }
   try{
     var zoneId = String(body.zoneId || ''); if(!zoneId) return { ok:false, error:'zoneIdが空です' };
-    var capacity = Math.max(0, Math.round(Number(body.capacity) || 0));
+    var field = (String(body.field || 'capacity') === 'priority') ? 'priority' : 'capacity';
+    var col = (field === 'priority') ? 4 : 3;
+    var value = Math.max((field === 'priority' ? 1 : 0), Math.round(Number(body.value) || 0));
     var zones = CFG.HAICHI_ZONES || [];
     var zone = null;
     for(var i = 0; i < zones.length; i++){ if(zones[i].id === zoneId){ zone = zones[i]; break; } }
@@ -1570,10 +1588,11 @@ function haichiZoneCfgSave_(body){
     var sh = haichiCfgSheet_();
     var v = sh.getDataRange().getValues();
     for(var r = 1; r < v.length; r++){
-      if(normText_(v[r][0]) === zoneId){ sh.getRange(r + 1, 3).setValue(capacity); return { ok:true, capacity: capacity }; }
+      if(normText_(v[r][0]) === zoneId){ sh.getRange(r + 1, col).setValue(value); return { ok:true, field: field, value: value }; }
     }
-    sh.appendRow([zone.id, zone.label, capacity]);
-    return { ok:true, capacity: capacity };
+    var row = [zone.id, zone.label, field === 'capacity' ? value : 2, field === 'priority' ? value : (zones.indexOf(zone) + 1)];
+    sh.appendRow(row);
+    return { ok:true, field: field, value: value };
   } finally { try{ lock.releaseLock(); }catch(e){} }
 }
 
