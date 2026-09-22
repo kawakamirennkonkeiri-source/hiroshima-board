@@ -491,6 +491,7 @@
     document.querySelectorAll('nav.tabs .tab').forEach(function(b){ b.classList.remove('sel'); });
     document.getElementById('view-' + name).classList.add('show');
     document.getElementById('tab-' + name).classList.add('sel');
+    if(name === 'nizukuri') nzLoadDaysNow_();
     if(name === 'seisan') seisanOnOpen();
     if(name === 'haichi') haichiOnOpen();
     if(name === 'hojo') hojoOnOpen();
@@ -538,14 +539,29 @@
     var el = document.getElementById('nz-days-label'); if(el) el.textContent = String(NZ_DAYS_WANTED);
     var j = document.getElementById('nz-jump'); if(j && !NZ_VIEW_DIRTY) j.value = NZ_JUMP_DATE || '';
   }
+  // 本日荷造りタブが今画面に出ているか（配置図/生産者タブと同様、重い取得はタブを開いている時だけ行う）
+  function nzTabActive_(){
+    var v = document.getElementById('view-nizukuri');
+    return !!(v && v.classList.contains('show'));
+  }
+  // 表示ウィンドウぶん（複数日）の注文一覧を取得して描画。タブを開いた時・日数変更/ジャンプ操作の直後・
+  //   タブを開いている間の30秒ごと（下のsetIntervalから）に呼ぶ。
+  function nzLoadDaysNow_(){
+    gasGet_('nizukuriFullDays', { days: NZ_DAYS_WANTED, date: nzViewStart_() }, function(data, err){
+      if(!err && data && data.days) renderNizukuriDays_(data.days);
+    });
+  }
+  setInterval(function(){ if(nzTabActive_()) nzLoadDaysNow_(); }, 30000);
   // クラウドの表示ウィンドウ（他PCの＋1日／指定日ジャンプ）をこのPCへ反映。自分がまだ送信中の変更が
   //   あるときは上書きしない（centerの「dirtyガード」と同じ考え方＝押した直後に他PCの古い値へ戻らないように）。
   function nzApplyCloudView_(v){
     if(!v || NZ_VIEW_DIRTY) return;
     var dw = Math.max(1, Math.min(14, Number(v.daysWanted) || 3));
     var jd = v.jumpDate || '';
+    var changed = (dw !== NZ_DAYS_WANTED) || (jd !== NZ_JUMP_DATE);
     NZ_DAYS_WANTED = dw; NZ_JUMP_DATE = jd;
     nzUpdateDaysLabel_();
+    if(changed && nzTabActive_()) nzLoadDaysNow_();
   }
   function nzPushView_(){
     NZ_VIEW_DIRTY = true;
@@ -558,14 +574,14 @@
     NZ_DAYS_WANTED = Math.min(14, NZ_DAYS_WANTED + 1);
     nzUpdateDaysLabel_();
     nzPushView_();
-    loadBundle_();
+    nzLoadDaysNow_();
   }
   // 「3日に戻す」：既定の3日・今日起点に戻す
   function nzResetDays(){
     NZ_DAYS_WANTED = 3; NZ_JUMP_DATE = '';
     nzUpdateDaysLabel_();
     nzPushView_();
-    loadBundle_();
+    nzLoadDaysNow_();
   }
   // 「この日を表示」：入力した日付を起点に、現在の表示日数ぶんを表示
   function nzJumpDay(){
@@ -573,7 +589,7 @@
     if(!j || !j.value) return;
     NZ_JUMP_DATE = j.value;
     nzPushView_();
-    loadBundle_();
+    nzLoadDaysNow_();
   }
 
   // 予測・予定カード用の1枚を描画（実績カードと共通の見た目・補足説明文つき）
@@ -811,7 +827,7 @@
 
   function loadBundle_(){
     document.getElementById('status').textContent = '読み込み中…';
-    gasGet_('bundle', { date: todayStr_(), nzDays: NZ_DAYS_WANTED, nzStart: nzViewStart_() }, function(data, err){
+    gasGet_('bundle', { date: todayStr_() }, function(data, err){
       if(err || !data){ document.getElementById('status').textContent = '🟡 通信エラー：' + (err || ''); return; }
       if(data.mainStats) LAST_MAINSTATS = data.mainStats;
       if(data.shift)     LAST_SHIFT = data.shift;
@@ -825,10 +841,9 @@
         renderJissekiStats_(LAST_NIZUKURI);
         nzRenderQtyBar_(LAST_NIZUKURI);
       }
-      // ⑦-b 他PCで「＋1日」「この日を表示」を押した結果（表示ウィンドウ）をこのPCへ同期
+      // ⑦-b 他PCで「＋1日」「この日を表示」を押した結果（表示ウィンドウ）をこのPCへ同期。
+      //   注文データ自体（重い）は本日荷造りタブを開いている時だけ別途nzLoadDaysNow_で取得する。
       if(data.nzView) nzApplyCloudView_(data.nzView);
-      // ⑦-b 本日荷造りタブ：表示ウィンドウぶん（複数日）の注文一覧
-      if(data.nizukuriDays && data.nizukuriDays.days) renderNizukuriDays_(data.nizukuriDays.days);
       renderMainStats_();
       if(data.shizaiAlerts) renderShizaiAlerts_(data.shizaiAlerts);
       renderSkuDiff();

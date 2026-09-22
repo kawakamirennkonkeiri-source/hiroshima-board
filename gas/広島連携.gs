@@ -165,11 +165,11 @@ function getBundle_(params){
     progressTest: safe(function(){ return progressTestGet_(params); }),
     seisan:       safe(function(){ return seisanGet_(params); }),
     nizukuri:     safe(function(){ return getNizukuriFull_(params); }),   // ⑦ 状態管理・生産ログ・実績計算つき（本日のみ・電子黒板ホーム用）
-    // ⑦-b 本日荷造りタブの複数日表示（センター電子黒板と同じ「デフォ3日・+1日・指定日ジャンプ」）。
-    //   何日分・起点日はクライアントが nzDays/nzStart で指定（bundle既存の date は他の「本日」専用の
-    //   読み取りと衝突させないため別名にした）。省略時はgetNizukuriFullDays_側の既定＝3日・今日起点。
-    nizukuriDays: safe(function(){ return getNizukuriFullDays_({ days: params.nzDays, date: params.nzStart }); }),
-    nzView:       safe(function(){ return nzViewGet_(); }),                // ⑦-b 表示ウィンドウ（全PC共有）
+    // ⑦-b 本日荷造りタブの表示ウィンドウ（何日分・起点日）だけ全PC共有用にbundleへ相乗り（軽量値）。
+    //   注文データ自体（nizukuriFullDays＝発注書シートの重い読み取り）は配置図/生産者タブと同様、
+    //   本日荷造りタブを開いている時だけ個別に取得する（30秒バンドルの対象に入れると全画面で
+    //   毎回コストがかかるため）。
+    nzView:       safe(function(){ return nzViewGet_(); }),
     mainStats:    safe(function(){ return getMainStatsToday_(params); }),
     shizaiAlerts: safe(function(){ return getShizaiAlerts_(); }),
     shift:        safe(function(){ return getHiroshimaShiftToday_(params); }),
@@ -793,7 +793,8 @@ function nzViewSave_(body){
 }
 
 // ---- ⑦-c 表示ウィンドウぶんの本日荷造り（複数日）をまとめて1回のリクエストで返す ----
-//      ?type=nizukuriFullDays&days=3&date=2026-09-22（date省略＝今日起点）
+//      ?type=nizukuriFullDays&days=3&date=2026-09-22（date省略＝今日起点）。
+//      配置図/生産者タブと同様、本日荷造りタブを開いている時だけフロントから呼ぶ（bundleには含めない）。
 function getNizukuriFullDays_(params){
   params = params || {};
   var daysWanted = Math.max(1, Math.min(CFG.NZ_VIEW_MAX_DAYS || 14, Number(params.days) || 3));
