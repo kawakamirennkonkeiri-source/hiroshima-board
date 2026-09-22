@@ -192,7 +192,8 @@
 
   /* ===== 圃場（畑）タブ（センター電子黒板の簡易版。生産DX連携が無いため手入力のみ） ===== */
   .hojo-card{ background:var(--surface-1); border:1px solid var(--border); border-radius:14px; padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
-  .hojo-card .top{ display:flex; align-items:center; gap:10px; }
+  .hojo-card .top{ display:flex; align-items:center; gap:8px; }
+  .hojo-card .dx-badge{ font-size:10px; font-weight:800; color:var(--blue-deep); background:var(--surface-0); border:1px solid var(--grid); border-radius:10px; padding:1px 7px; white-space:nowrap; }
   .hojo-card .nm{ font-size:16px; font-weight:800; color:var(--text-primary); word-break:break-all; }
   .hojo-card .del{ margin-left:auto; appearance:none; cursor:pointer; border:none; background:transparent; color:var(--muted); font-size:18px; line-height:1; padding:2px 4px; }
   .hojo-card .del:hover{ color:var(--red); }
@@ -381,13 +382,13 @@
     <div class="empty-note" id="hojo-status" style="padding:0 0 10px;"></div>
     <div class="nz-qty-bar"><span class="nz-qty-lbl">本日合計：<b id="hojo-total">0</b> 舟</span></div>
     <div class="haichi-add" style="margin-top:14px;">
-      <input id="hojo-newname" type="text" placeholder="圃場名を入れてEnter（例：185／田中さん）" onkeydown="if(event.key==='Enter')hojoAddField();">
+      <input id="hojo-newname" type="text" placeholder="朝礼ボードに無い圃場だけ入力してEnter（例：185／田中さん）" onkeydown="if(event.key==='Enter')hojoAddField();">
       <button class="haichi-btn sub" onclick="hojoAddField()">＋ 圃場を追加</button>
     </div>
     <div id="hojo-list" class="seisan-list" style="margin-top:14px;"></div>
-    <div class="empty-note" id="hojo-empty">まだ圃場が登録されていません。上の欄に圃場名を入れて追加してください。</div>
+    <div class="empty-note" id="hojo-empty">今日の圃場を読み込み中… 「【広島】朝礼ボード_データ」に本日の圃場が登録されると、ここに🔗朝礼の付いた圃場が自動で並びます。無い分だけ上の欄で手動追加できます。</div>
   </div>
-  <div class="foot-note">保存先：【広島】電子黒板データ内「圃場舟数」シート。歩留まりの舟数（分母）は、ここでの本日合計と生産者タブの収穫舟数を使います（未入力の日は発注書シートの値を暫定的に使います）。</div>
+  <div class="foot-note">🔗朝礼の付いた圃場は「【広島】朝礼ボード_データ」（A列＝日付・B列＝圃場名。読み取り専用）から毎回自動で反映されます。保存先：【広島】電子黒板データ内「圃場舟数」シート。歩留まりの舟数（分母）は、ここでの本日合計と生産者タブの収穫舟数を使います（未入力の日は発注書シートの値を暫定的に使います）。</div>
 </div>
 
 <!-- ===== 舟数モニター（もう1台の液晶用。圃場＋生産者の“いまの舟数”を遠くからでも読めるように） ===== -->
@@ -1221,7 +1222,7 @@
     var wrap=document.getElementById('hojo-list'); if(!wrap) return;
     wrap.innerHTML = HOJO.fields.map(function(f,i){
       return '<div class="hojo-card">'
-        + '<div class="top"><span class="nm">'+escHtml_(f.name)+'</span><button class="del" onclick="hojoDelField('+i+')">✕</button></div>'
+        + '<div class="top">'+(f.fromDx?'<span class="dx-badge">🔗朝礼</span>':'')+'<span class="nm">'+escHtml_(f.name)+'</span><button class="del" onclick="hojoDelField('+i+')">✕</button></div>'
         + '<div class="fnrow"><span class="fval">'+(Number(f.funes)||0)+'</span><span class="u">舟</span>'
         + '<input class="fedit" type="number" min="0" step="1" value="'+(Number(f.funes)||0)+'" onchange="hojoSetVal('+i+',this.value)"></div>'
         + '<div class="btns"><button class="pbtn minus" onclick="hojoBump('+i+',-1)">−1</button><button class="pbtn" onclick="hojoBump('+i+',1)">＋1舟</button><button class="pbtn" onclick="hojoBump('+i+',5)">＋5舟</button></div>'

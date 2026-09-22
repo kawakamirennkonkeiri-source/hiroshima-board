@@ -38,7 +38,11 @@ var CFG = {
   DATA_SS_ID: '1m7r5lk-Tgkn2UsvMxiGVRxF3qyaFHE0aIXa3AtIxa0w',
   PROGRESS_TEST_SHEET: '進捗テスト',      // ①「進捗シートへ数字を飛ばす」機能の試験運用ログ
   SEISAN_SHEET: '生産者記録',            // ② 生産者の持ち込み舟数・出来高
-  HOJO_SHEET: '圃場舟数',                // ⑧ 圃場（畑）から持ってきた舟数（手入力のみ。広島にはセンターの生産DX連携が無いため簡易版）
+  HOJO_SHEET: '圃場舟数',                // ⑧ 圃場（畑）から持ってきた舟数（保存先はDATA_SS_IDのみ）
+  // ⑧ 圃場名の自動取り込み元：「【広島】朝礼ボード_データ」スプレッドシート（曽我さん指定・2026-09-22）。
+  //   A列＝日付・B列＝圃場名。読み取り専用（書き込みは絶対にしない）。gidでシートを特定（名前変更に強くするため）。
+  HOJO_SOURCE_SS_ID: '1qGvDOVIWCzs1bsNFgLWIXNZ-h7Lghh1_2W1ofHfU0j4',
+  HOJO_SOURCE_GID: 132351016,
   SHIZAI_SHEET: '資材データ',            // ③ 資材管理アプリ：クラウド共有データ本体
   SHIZAI_BACKUP_SHEET: '資材バックアップ', // ③ 月末棚卸ごとの世代バックアップ（追記のみ）
   SHIZAI_STOCK_SHEET: '月末棚卸（実数）',  // ③ 人が読める実数の表
@@ -99,6 +103,7 @@ function doGet(e){
     else if(type === 'debugShift')   out = debugShift_(e.parameter);               // ⑥ 診断用
     else if(type === 'nizukuriFull') out = getNizukuriFull_(e.parameter);          // ⑦ 状態管理・生産ログ・実績計算つきの本日荷造り
     else if(type === 'hojoGet')      out = hojoGet_(e.parameter);                  // ⑧ 圃場（畑）から持ってきた舟数
+    else if(type === 'debugHojoSource') out = debugHojoSource_(e.parameter);       // ⑧ 診断用：朝礼ボード連携
     else if(type === 'progressByClient') out = getProgressByClient_(e.parameter);  // 🔍 進捗差分：発注書「進捗」シートの取引先別荷造数
     else if(type === 'debugProgress') out = debugProgress_(e.parameter);           // 🔍 診断用
     else if(type === 'bundle')       out = getBundle_(e.parameter);
@@ -917,8 +922,9 @@ function seisanSave_(body){
 
 // ============================================================
 // ⑧ 圃場（畑）：本日持ってきた舟数の記録（保存先はDATA_SS_ID内のみ）
-//   センター電子黒板の圃場タブと同じ考え方だが、広島には「生産DX（朝礼ボード）」の連携先が無いため
-//   圃場名の自動取り込みは行わない＝手入力のみの簡易版（曽我さん確認済み・2026-09-22）。
+//   圃場名は「【広島】朝礼ボード_データ」スプレッドシート（A列＝日付・B列＝圃場名・読み取り専用）から
+//   毎回自動で取り込む（センター電子黒板の「生産DX（朝礼ボード）」連携と同じ考え方。曽我さん指定・2026-09-22）。
+//   舟数0で追加し、既に記録済みの舟数は保持＝名前だけを供給、数量は現場入力を優先。fromDx=取り込み元の目印。
 //   列＝日付/圃場名/舟数/更新日時
 // ============================================================
 function hojoSheet_(){
@@ -928,22 +934,71 @@ function hojoSheet_(){
   if(!sh){ sh = ss.insertSheet(name); sh.appendRow(['日付','圃場名','舟数','更新日時']); try{ sh.setFrozenRows(1); }catch(e){} }
   return sh;
 }
+// 朝礼ボードのシートを開く（gidで特定。見つからなければ先頭シートにフォールバック）
+function hojoSourceSheet_(){
+  var ss = SpreadsheetApp.openById(CFG.HOJO_SOURCE_SS_ID);
+  var sheets = ss.getSheets();
+  for(var i = 0; i < sheets.length; i++){
+    if(String(sheets[i].getSheetId()) === String(CFG.HOJO_SOURCE_GID)) return sheets[i];
+  }
+  return sheets[0];
+}
+// 朝礼ボードから指定日（省略＝今日）の圃場名一覧を返す（読み取り専用。失敗しても[]を返し圃場舟数側は必ず動く）
+function getHojoSourceFieldNames_(dateStr){
+  var out = [];
+  try{
+    var sh = hojoSourceSheet_();
+    var v = sh.getDataRange().getValues();
+    var want = dateStr || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
+    for(var r = 0; r < v.length; r++){
+      var d0 = v[r][0];
+      var dstr = (d0 instanceof Date) ? Utilities.formatDate(d0, CFG.TZ, 'yyyy-MM-dd') : String(d0 || '').trim();
+      if(dstr !== want) continue;
+      var nm = normText_(v[r][1]);
+      if(nm && out.indexOf(nm) < 0) out.push(nm);
+    }
+  }catch(e){}
+  return out;
+}
 function hojoGet_(params){
   params = params || {};
   var sh = hojoSheet_();
   var date = String(params.date || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
   var v = sh.getDataRange().getValues();
-  var fields = [], total = 0;
+  var fields = [], total = 0, byName = {};
   for(var r = 1; r < v.length; r++){
     var d0 = v[r][0];
     var dstr = (d0 instanceof Date) ? Utilities.formatDate(d0, CFG.TZ, 'yyyy-MM-dd') : String(d0).trim();
     if(dstr !== date) continue;
     var name = String(v[r][1] || '').trim(); if(!name) continue;
     var funes = Number(v[r][2]) || 0;
-    fields.push({ name: name, funes: funes });
+    var f = { name: name, funes: funes };
+    fields.push(f); byName[name] = f;
     total += funes;
   }
-  return { date: date, fields: fields, total: total };
+  var dxNames = getHojoSourceFieldNames_(date);
+  dxNames.forEach(function(nm){
+    if(byName[nm]){ byName[nm].fromDx = true; return; }
+    var f = { name: nm, funes: 0, fromDx: true };
+    fields.push(f); byName[nm] = f;
+  });
+  return { date: date, fields: fields, total: total, dxCount: dxNames.length };
+}
+// 🔗 診断用：朝礼ボード連携がずれる原因調査（本番運用には使わない）
+function debugHojoSource_(params){
+  params = params || {};
+  var out = { ssId: CFG.HOJO_SOURCE_SS_ID, gid: CFG.HOJO_SOURCE_GID };
+  try{
+    var ss = SpreadsheetApp.openById(CFG.HOJO_SOURCE_SS_ID);
+    out.allSheets = ss.getSheets().map(function(s){ return { name: s.getName(), gid: s.getSheetId() }; });
+    var sh = hojoSourceSheet_();
+    out.usedSheetName = sh.getName();
+    var v = sh.getDataRange().getValues();
+    out.rowCount = v.length;
+    out.first10Rows = v.slice(0, 10).map(function(row){ return [row[0], row[1]]; });
+    out.namesForParam = getHojoSourceFieldNames_(params.date);
+  }catch(e){ out.error = String(e && e.message || e); }
+  return out;
 }
 function hojoSave_(body){
   body = body || {};
