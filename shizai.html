@@ -1557,7 +1557,8 @@ function cloudJsonp(type,onData,onErr,extra){
   const sep=url.includes('?')?'&':'?';
   sc.src=url+sep+'type='+type+(extra?('&'+extra):'')+'&callback='+cb+'&_='+Date.now();
   document.body.appendChild(sc);
-  setTimeout(()=>{ if(!done && window[cb]){ delete window[cb]; sc.remove(); onErr&&onErr('timeout'); } },15000);
+  // GAS応答が12〜15秒前後かかることがあるため25秒に延長（電子黒板index.htmlと同じ対応・2026-09-22）
+  setTimeout(()=>{ if(!done && window[cb]){ delete window[cb]; sc.remove(); onErr&&onErr('timeout'); } },25000);
 }
 // クラウドの最新データを取り込む
 function cloudPullFull(onDone){

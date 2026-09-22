@@ -465,7 +465,8 @@
 
   function jsonp_(url, cb){
     var name = 'cb_' + Date.now() + '_' + Math.floor(Math.random()*1e6);
-    var timer = setTimeout(function(){ if(window[name]){ delete window[name]; cb(null, 'timeout'); } }, 12000);
+    // GAS応答が12〜15秒前後かかることがあり、12秒だと正常応答なのにタイムアウト扱いになっていたため25秒に延長（2026-09-22）
+    var timer = setTimeout(function(){ if(window[name]){ delete window[name]; cb(null, 'timeout'); } }, 25000);
     window[name] = function(data){ clearTimeout(timer); delete window[name]; cb(data, null); };
     var s = document.createElement('script');
     s.src = url + (url.indexOf('?')>=0?'&':'?') + 'callback=' + name;
