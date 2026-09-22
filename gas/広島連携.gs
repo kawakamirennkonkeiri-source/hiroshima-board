@@ -74,6 +74,9 @@ var CFG = {
   // 広島の実データでの区分(kubun)は「洗い」「Mup」「C」「2S」等（?type=nizukuriで確認済み・2026-09-19）。
   // センターの「区分が"C/S"の1トークン」とは表記が違うため広島専用の判定にする。
   NZ_CS_KUBUN_RE: /^(C|\d*S)$/,
+  // ⑦-b 本日荷造りタブの表示ウィンドウ（何日分・起点日）を全PC共有するためのキー（PropertiesService）
+  NZ_VIEW_PROP_KEY: 'NZ_VIEW_STATE',
+  NZ_VIEW_MAX_DAYS: 14,
 
   MARK_PRESENT: '〇'
 };
@@ -102,6 +105,8 @@ function doGet(e){
     else if(type === 'haichiGet')    out = getHaichiGet_(e.parameter);             // ⑥ 配置図
     else if(type === 'debugShift')   out = debugShift_(e.parameter);               // ⑥ 診断用
     else if(type === 'nizukuriFull') out = getNizukuriFull_(e.parameter);          // ⑦ 状態管理・生産ログ・実績計算つきの本日荷造り
+    else if(type === 'nizukuriFullDays') out = getNizukuriFullDays_(e.parameter);  // ⑦-b 表示ウィンドウぶん（複数日）をまとめて取得
+    else if(type === 'nzViewGet')    out = nzViewGet_();                           // ⑦-b 本日荷造りタブの表示ウィンドウ（全PC共有）
     else if(type === 'hojoGet')      out = hojoGet_(e.parameter);                  // ⑧ 圃場（畑）から持ってきた舟数
     else if(type === 'debugHojoSource') out = debugHojoSource_(e.parameter);       // ⑧ 診断用：朝礼ボード連携
     else if(type === 'progressByClient') out = getProgressByClient_(e.parameter);  // 🔍 進捗差分：発注書「進捗」シートの取引先別荷造数
@@ -109,7 +114,7 @@ function doGet(e){
     else if(type === 'bundle')       out = getBundle_(e.parameter);
     else if(type === 'debug')        out = debugTop_();
     else if(type === 'debugOrder')   out = debugOrder_(e.parameter);
-    else out = { error:'type を progress / funes / progressTestGet / seisanGet / nizukuri / mainStats / shizaiAlerts / shizaiLoad / shizaiMeta / shizaiBackupList / shizaiBackupGet / shizaiUsage / shift / haichiGet / nizukuriFull / hojoGet / progressByClient / bundle / debug のいずれかで指定してください' };
+    else out = { error:'type を progress / funes / progressTestGet / seisanGet / nizukuri / mainStats / shizaiAlerts / shizaiLoad / shizaiMeta / shizaiBackupList / shizaiBackupGet / shizaiUsage / shift / haichiGet / nizukuriFull / nizukuriFullDays / nzViewGet / hojoGet / progressByClient / bundle / debug のいずれかで指定してください' };
   }catch(err){
     out = { error: String(err && err.message || err) };
   }
@@ -140,6 +145,7 @@ function doPost(e){
     else if(action === 'haichiZoneCfgSave') out = haichiZoneCfgSave_(body); // ⑩ ゾーン設定：定員をアプリから編集
     else if(action === 'nizukuriStateSave') out = nzStateSave_(body);  // ⑦ 状態(確定/作成済み)・総舟数の当日上書き
     else if(action === 'nizukuriMadeSave')  out = nzMadeSave_(body);   // ⑦ 本日作った分（生産ログupsert）
+    else if(action === 'nzViewSave')        out = nzViewSave_(body);  // ⑦-b 本日荷造りタブの表示ウィンドウ（全PC共有）
     else if(action === 'hojoSave')          out = hojoSave_(body);    // ⑧ 圃場（畑）から持ってきた舟数
     else out = { ok:false, error:'unknown action: ' + action };
   }catch(err){
@@ -158,7 +164,12 @@ function getBundle_(params){
     funes:        safe(function(){ return getFunesToday_(params); }),
     progressTest: safe(function(){ return progressTestGet_(params); }),
     seisan:       safe(function(){ return seisanGet_(params); }),
-    nizukuri:     safe(function(){ return getNizukuriFull_(params); }),   // ⑦ 状態管理・生産ログ・実績計算つき
+    nizukuri:     safe(function(){ return getNizukuriFull_(params); }),   // ⑦ 状態管理・生産ログ・実績計算つき（本日のみ・電子黒板ホーム用）
+    // ⑦-b 本日荷造りタブの複数日表示（センター電子黒板と同じ「デフォ3日・+1日・指定日ジャンプ」）。
+    //   何日分・起点日はクライアントが nzDays/nzStart で指定（bundle既存の date は他の「本日」専用の
+    //   読み取りと衝突させないため別名にした）。省略時はgetNizukuriFullDays_側の既定＝3日・今日起点。
+    nizukuriDays: safe(function(){ return getNizukuriFullDays_({ days: params.nzDays, date: params.nzStart }); }),
+    nzView:       safe(function(){ return nzViewGet_(); }),                // ⑦-b 表示ウィンドウ（全PC共有）
     mainStats:    safe(function(){ return getMainStatsToday_(params); }),
     shizaiAlerts: safe(function(){ return getShizaiAlerts_(); }),
     shift:        safe(function(){ return getHiroshimaShiftToday_(params); }),
@@ -749,6 +760,54 @@ function getNizukuriFull_(params){
     madeAllKg: allKg, madeCsKg: csKg, totalFunes: totalFunes,
     budomari: budomari, kakouRitsu: kakouRitsu, finishTime: finishTime
   };
+}
+
+// ---- ⑦-b 本日荷造りタブの表示ウィンドウ（何日分表示・起点日）。注文データ自体ではなく
+//      「今どの範囲を見ているか」というナビゲーション状態。センター電子黒板の
+//      「デフォ3日・＋1日・指定日にジャンプ」を全PCで揃えるため、PropertiesService
+//      （スクリプト全体で共有・軽量）に1個だけ保存する。日付ごとの行を持つ本日荷造り状態シートとは別物。 ----
+function nzViewGet_(){
+  try{
+    var raw = PropertiesService.getScriptProperties().getProperty(CFG.NZ_VIEW_PROP_KEY || 'NZ_VIEW_STATE');
+    if(!raw) return { daysWanted: 3, jumpDate: '', updatedAt: '', by: '' };
+    var p = JSON.parse(raw);
+    return {
+      daysWanted: Math.max(1, Math.min(CFG.NZ_VIEW_MAX_DAYS || 14, Number(p.daysWanted) || 3)),
+      jumpDate: String(p.jumpDate || ''),
+      updatedAt: String(p.updatedAt || ''),
+      by: String(p.by || '')
+    };
+  }catch(e){ return { daysWanted: 3, jumpDate: '', updatedAt: '', by: '' }; }
+}
+function nzViewSave_(body){
+  body = body || {};
+  var now = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd HH:mm:ss');
+  var payload = {
+    daysWanted: Math.max(1, Math.min(CFG.NZ_VIEW_MAX_DAYS || 14, Number(body.daysWanted) || 3)),
+    jumpDate: String(body.jumpDate || '').trim(),
+    updatedAt: now,
+    by: String(body.by || '')
+  };
+  PropertiesService.getScriptProperties().setProperty(CFG.NZ_VIEW_PROP_KEY || 'NZ_VIEW_STATE', JSON.stringify(payload));
+  return { ok: true, view: payload };
+}
+
+// ---- ⑦-c 表示ウィンドウぶんの本日荷造り（複数日）をまとめて1回のリクエストで返す ----
+//      ?type=nizukuriFullDays&days=3&date=2026-09-22（date省略＝今日起点）
+function getNizukuriFullDays_(params){
+  params = params || {};
+  var daysWanted = Math.max(1, Math.min(CFG.NZ_VIEW_MAX_DAYS || 14, Number(params.days) || 3));
+  var startStr = String(params.date || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
+  var p = startStr.split('-').map(Number);
+  var start = (p.length === 3 && p[0] && p[1] && p[2]) ? new Date(p[0], p[1] - 1, p[2]) : new Date();
+  var days = [];
+  for(var i = 0; i < daysWanted; i++){
+    var d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+    var dISO = Utilities.formatDate(d, CFG.TZ, 'yyyy-MM-dd');
+    var dayParams = {}; for(var k in params){ dayParams[k] = params[k]; } dayParams.date = dISO;
+    days.push(getNizukuriFull_(dayParams));
+  }
+  return { days: days, daysWanted: daysWanted, startDate: startStr };
 }
 
 // ============================================================

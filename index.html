@@ -100,6 +100,19 @@
   .nz-row .qc4 input{ width:100%; font-family:inherit; font-size:18px; font-weight:800; text-align:center; padding:3px 2px; border:1px solid var(--grid); border-radius:6px; font-variant-numeric:tabular-nums; }
   .nz-row .qc4 input.q-made{ color:#1c7d1c; }
 
+  /* ===== 本日荷造りタブ：日付ナビゲーション（デフォ3日・＋1日・指定日ジャンプ。全PC共有） ===== */
+  .nz-daynav{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
+  .nz-daynav-label{ font-size:12px; font-weight:700; color:var(--muted); }
+  .nz-daynav-label b{ color:var(--blue-deep); font-size:14px; }
+  .nz-jump-input{ font-family:inherit; font-size:13px; padding:6px 8px; border:1.5px solid var(--grid); border-radius:8px; }
+  .nz-daysec{ margin-bottom:18px; }
+  .nz-daysec:last-child{ margin-bottom:0; }
+  .nz-day-head{ display:flex; align-items:baseline; gap:10px; margin-bottom:8px; padding-bottom:6px; border-bottom:1.5px solid var(--border); }
+  .nz-day-head .d{ font-size:15px; font-weight:800; color:var(--text-primary); }
+  .nz-day-head .d.is-today{ color:var(--blue-deep); }
+  .nz-day-head .sub{ margin-left:auto; font-size:12px; font-weight:700; color:var(--muted); }
+  .nz-day-head .warn{ font-size:12px; font-weight:700; color:var(--red); }
+
   /* ===== 配置優先テーブル（配置図タブ。力量表と同じ見た目・タップで優先番号を切替） ===== */
   .haichi-prio-btn{ appearance:none; cursor:pointer; font-family:inherit; font-size:13px; font-weight:800; border:1.5px solid var(--grid); background:#fff; color:var(--text-secondary); width:30px; height:30px; border-radius:8px; }
   .haichi-prio-btn.p-num{ background:var(--blue); border-color:var(--blue); color:#fff; }
@@ -306,14 +319,22 @@
 <div id="view-nizukuri" class="view">
   <div class="card">
     <h3>📦 本日荷造り <span class="tag" id="nizukuri-date"></span></h3>
+    <div class="nz-daynav">
+      <button class="nz-btn sub" onclick="nzExtendDay()">＋1日</button>
+      <button class="nz-btn sub" onclick="nzResetDays()">3日に戻す</button>
+      <input type="date" id="nz-jump" class="nz-jump-input">
+      <button class="nz-btn sub" onclick="nzJumpDay()">この日を表示</button>
+      <span class="nz-daynav-label">表示中：<b id="nz-days-label">3</b>日間（全PC共通）</span>
+    </div>
     <div class="nz-summary">
       <div class="s done"><div class="lbl">作成済み</div><div class="val" id="nz-done-count">0<small>件</small></div></div>
       <div class="s pending"><div class="lbl">未確定</div><div class="val" id="nz-pending-count">0<small>件</small></div></div>
     </div>
-    <div class="nz-rows" id="nizukuri-rows"></div>
-    <div class="empty-note" id="nizukuri-empty" style="display:none;">本日の注文はまだ無いようです（発注書シートに本日の行が見つからない場合も含む）。</div>
+    <div id="nizukuri-days"></div>
+    <div class="empty-note" id="nizukuri-empty" style="display:none;">注文はまだ無いようです（発注書シートに該当日の行が見つからない場合も含む）。</div>
   </div>
-  <div class="foot-note">状態のボタンを押すと「未確定→確定→作成済み」の順で切り替わります。累計＝今日より前に作った分の合計（自動・手入力で修正可）／本日＝今日作った分／のこり＝合計−累計−本日。</div>
+  <div class="foot-note">状態のボタンを押すと「未確定→確定→作成済み」の順で切り替わります。累計＝その日より前に作った分の合計（自動・手入力で修正可）／本日＝今日作った分／のこり＝合計−累計−本日。<br>
+    表示する日数・指定日は「＋1日」「この日を表示」を押した時点で全PCへ反映されます（30秒ごとに自動で同期）。</div>
 </div>
 
 <!-- ===== 進捗差分タブ ===== -->
@@ -486,6 +507,75 @@
   /* ===== 本日荷造りタブ ===== */
   var LAST_MAINSTATS = null, LAST_NIZUKURI = null, LAST_SHIFT = null, LAST_HOJO = null, LAST_SEISAN = null, LAST_PROGRESS_BY_CLIENT = {};
 
+  // ⑦-b 表示ウィンドウ（何日分表示・起点日）。センター電子黒板と同じ「デフォ3日・＋1日・指定日ジャンプ」。
+  //   本日荷造り状態（注文ごとの状態）とは別物＝GAS側はPropertiesServiceに1個だけ保存し全PC共有する。
+  var NZ_DAYS_WANTED = 3;
+  var NZ_JUMP_DATE = '';        // 'yyyy-MM-dd' or ''（空＝今日起点）
+  var NZ_VIEW_DIRTY = false;    // このPCで変更したがまだクラウドへ送り切れていない（cloud→localの上書きをガード）
+  var NZ_DAY_ITEMS = [];        // 直近描画分：[{date:'yyyy-MM-dd', data: nizukuriFullの1件}]
+
+  function nzAddDaysISO_(iso, n){
+    var p = String(iso || '').split('-').map(Number);
+    if(p.length !== 3 || !p[0]) return iso;
+    var d = new Date(p[0], p[1] - 1, p[2]);
+    d.setDate(d.getDate() + n);
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  function nzViewStart_(){ return NZ_JUMP_DATE || todayStr_(); }
+  function nzViewDates_(){
+    var start = nzViewStart_(), out = [];
+    for(var i = 0; i < NZ_DAYS_WANTED; i++) out.push(nzAddDaysISO_(start, i));
+    return out;
+  }
+  function nzDateLabel_(iso){
+    var p = String(iso || '').split('-').map(Number);
+    if(p.length !== 3) return iso || '';
+    var d = new Date(p[0], p[1] - 1, p[2]);
+    var wday = ['日', '月', '火', '水', '木', '金', '土'][d.getDay()];
+    return p[1] + '/' + p[2] + '（' + wday + '）' + (iso === todayStr_() ? ' ・本日' : '');
+  }
+  function nzUpdateDaysLabel_(){
+    var el = document.getElementById('nz-days-label'); if(el) el.textContent = String(NZ_DAYS_WANTED);
+    var j = document.getElementById('nz-jump'); if(j && !NZ_VIEW_DIRTY) j.value = NZ_JUMP_DATE || '';
+  }
+  // クラウドの表示ウィンドウ（他PCの＋1日／指定日ジャンプ）をこのPCへ反映。自分がまだ送信中の変更が
+  //   あるときは上書きしない（centerの「dirtyガード」と同じ考え方＝押した直後に他PCの古い値へ戻らないように）。
+  function nzApplyCloudView_(v){
+    if(!v || NZ_VIEW_DIRTY) return;
+    var dw = Math.max(1, Math.min(14, Number(v.daysWanted) || 3));
+    var jd = v.jumpDate || '';
+    NZ_DAYS_WANTED = dw; NZ_JUMP_DATE = jd;
+    nzUpdateDaysLabel_();
+  }
+  function nzPushView_(){
+    NZ_VIEW_DIRTY = true;
+    gasPost_('nzViewSave', { daysWanted: NZ_DAYS_WANTED, jumpDate: NZ_JUMP_DATE, by: deviceLabel_() }, function(d, err){
+      NZ_VIEW_DIRTY = false;
+    });
+  }
+  // 「＋1日」：表示日数を1増やす（センターの「先の日を追加」に相当。ユーザー要望どおりボタン名は「＋1日」）
+  function nzExtendDay(){
+    NZ_DAYS_WANTED = Math.min(14, NZ_DAYS_WANTED + 1);
+    nzUpdateDaysLabel_();
+    nzPushView_();
+    loadBundle_();
+  }
+  // 「3日に戻す」：既定の3日・今日起点に戻す
+  function nzResetDays(){
+    NZ_DAYS_WANTED = 3; NZ_JUMP_DATE = '';
+    nzUpdateDaysLabel_();
+    nzPushView_();
+    loadBundle_();
+  }
+  // 「この日を表示」：入力した日付を起点に、現在の表示日数ぶんを表示
+  function nzJumpDay(){
+    var j = document.getElementById('nz-jump');
+    if(!j || !j.value) return;
+    NZ_JUMP_DATE = j.value;
+    nzPushView_();
+    loadBundle_();
+  }
+
   // 予測・予定カード用の1枚を描画（実績カードと共通の見た目・補足説明文つき）
   function renderStatCardHtml_(c){
     if(c.warn) return '<div class="warn-box" style="flex-basis:100%;">' + escHtml_(c.warn) + '</div>';
@@ -544,49 +634,65 @@
     if(/^(C|\d*S)$/.test(k)) return 'cs';
     return '';
   }
-  function renderNizukuri_(data){
-    LAST_NIZUKURI = data;
-    document.getElementById('nizukuri-date').textContent = (data && data.date) || '';
-    var rows = document.getElementById('nizukuri-rows');
-    var empty = document.getElementById('nizukuri-empty');
-    renderJissekiStats_(data || {});
-    nzRenderQtyBar_(data || {});
-    if(!data || data.error || !data.orders || !data.orders.length){
-      rows.innerHTML = ''; empty.style.display = 'block';
-      nzRenderSummary_([]);
-      return;
-    }
-    empty.style.display = 'none';
-    rows.innerHTML = data.orders.map(function(o, idx){
-      var isKg = o.unit === 'kg';
-      var U = isKg ? 'kg' : 'c/s';
-      return '<div class="nz-row' + (o.state === 'sakusei' ? ' is-done' : '') + (o.isNew ? ' is-new' : '') + '">' +
-        '<div class="nz-r1">' +
-          '<div class="idx">' + (idx + 1) + '</div>' +
-          '<div class="cust">' + escHtml_(o.cust) + (o.kubun ? '<span class="bunrui ' + nzBunruiClass_(o.kubun) + '">' + escHtml_(o.kubun) + '</span>' : '') + (isKg ? '<span class="bunrui b-kg">kg</span>' : '') + (o.isNew ? '<span class="new-flag">NEW</span>' : '') + '</div>' +
-          '<div class="nyusu">' + (isKg ? '<small>kgで入力</small>' : (o.nyusu ? '入数 ' + escHtml_(String(o.nyusu)) : '<small>入数 —</small>')) + '</div>' +
-          '<button class="nz-status" data-st="' + o.state + '" onclick="nzStateCycle(\'' + escAttr_(o.key) + '\')">' + nzStateMark_(o.state) + ' ' + escHtml_(nzStateLabel_(o.state)) + '</button>' +
-        '</div>' +
-        '<div class="qc4">' +
-          '<div class="qi total"><span class="ql">合計</span><span class="cs">' + escHtml_(String(Math.round(o.qty || 0))) + '<small>' + U + '</small></span></div>' +
-          '<div class="qi prev"><span class="ql">累計</span><span class="cs">' + escHtml_(String(o.madePrev || 0)) + '<small>' + U + '</small></span></div>' +
-          '<div class="qi made"><span class="ql">本日</span><input class="q-made" type="number" min="0" step="1" value="' + (o.madeToday || '') + '" data-key="' + escAttr_(o.key) + '" oninput="nzMadeInput(this)" onchange="nzMadeCommit(this)"></div>' +
-          '<div class="qi rest' + (o.rest <= 0 ? ' done' : '') + '"><span class="ql">のこり</span><span class="cs rest-v">' + escHtml_(String(o.rest)) + '<small>' + U + '</small></span></div>' +
-        '</div>' +
-      '</div>';
-    }).join('');
-    nzRenderSummary_(data.orders);
+  // ⑦-b 表示ウィンドウ（複数日）ぶんの本日荷造りを描画。センター電子黒板の日付セクション表示に相当。
+  function renderNizukuriDays_(daysArr){
+    var dates = nzViewDates_();
+    NZ_DAY_ITEMS = (daysArr || []).map(function(d, i){ return { date: dates[i] || (d && d.date) || '', data: d }; });
+    nzRenderDayItems_();
   }
-  function nzRenderSummary_(orders){
-    var done = 0, pending = 0;
-    (orders || []).forEach(function(o){ if(o.state === 'sakusei') done++; else if(o.state === 'mikettei' || !o.state) pending++; });
-    var d = document.getElementById('nz-done-count'); if(d) d.innerHTML = done + '<small>件</small>';
-    var p = document.getElementById('nz-pending-count'); if(p) p.innerHTML = pending + '<small>件</small>';
+  function nzRenderDayItems_(){
+    var wrap = document.getElementById('nizukuri-days');
+    var emptyAll = true, done = 0, pending = 0;
+    var html = NZ_DAY_ITEMS.map(function(item){
+      var d = item.data, orders = (d && !d.error && d.orders) ? d.orders : [];
+      if(orders.length) emptyAll = false;
+      orders.forEach(function(o){ if(o.state === 'sakusei') done++; else if(o.state === 'mikettei' || !o.state) pending++; });
+      return nzDaySectionHtml_(item.date, d, orders);
+    }).join('');
+    wrap.innerHTML = html;
+    var empty = document.getElementById('nizukuri-empty'); if(empty) empty.style.display = emptyAll ? 'block' : 'none';
+    var dEl = document.getElementById('nz-done-count'); if(dEl) dEl.innerHTML = done + '<small>件</small>';
+    var pEl = document.getElementById('nz-pending-count'); if(pEl) pEl.innerHTML = pending + '<small>件</small>';
+  }
+  function nzDaySectionHtml_(iso, d, orders){
+    var isToday = iso === todayStr_();
+    var head = '<div class="nz-day-head"><span class="d' + (isToday ? ' is-today' : '') + '">' + escHtml_(nzDateLabel_(iso)) + '</span>' +
+      (d && d.error ? '<span class="warn">' + escHtml_(String(d.error)) + '</span>' : '<span class="sub">' + orders.length + '件</span>') +
+      '</div>';
+    if(!orders.length){
+      return '<div class="nz-daysec">' + head + '<div class="empty-note" style="padding:6px 2px 2px;">この日の注文はまだ無いようです。</div></div>';
+    }
+    var rows = orders.map(nzRowHtml_).join('');
+    return '<div class="nz-daysec">' + head + '<div class="nz-rows">' + rows + '</div></div>';
+  }
+  function nzRowHtml_(o, idx){
+    var isKg = o.unit === 'kg';
+    var U = isKg ? 'kg' : 'c/s';
+    return '<div class="nz-row' + (o.state === 'sakusei' ? ' is-done' : '') + (o.isNew ? ' is-new' : '') + '">' +
+      '<div class="nz-r1">' +
+        '<div class="idx">' + (idx + 1) + '</div>' +
+        '<div class="cust">' + escHtml_(o.cust) + (o.kubun ? '<span class="bunrui ' + nzBunruiClass_(o.kubun) + '">' + escHtml_(o.kubun) + '</span>' : '') + (isKg ? '<span class="bunrui b-kg">kg</span>' : '') + (o.isNew ? '<span class="new-flag">NEW</span>' : '') + '</div>' +
+        '<div class="nyusu">' + (isKg ? '<small>kgで入力</small>' : (o.nyusu ? '入数 ' + escHtml_(String(o.nyusu)) : '<small>入数 —</small>')) + '</div>' +
+        '<button class="nz-status" data-st="' + o.state + '" onclick="nzStateCycle(\'' + escAttr_(o.key) + '\')">' + nzStateMark_(o.state) + ' ' + escHtml_(nzStateLabel_(o.state)) + '</button>' +
+      '</div>' +
+      '<div class="qc4">' +
+        '<div class="qi total"><span class="ql">合計</span><span class="cs">' + escHtml_(String(Math.round(o.qty || 0))) + '<small>' + U + '</small></span></div>' +
+        '<div class="qi prev"><span class="ql">累計</span><span class="cs">' + escHtml_(String(o.madePrev || 0)) + '<small>' + U + '</small></span></div>' +
+        '<div class="qi made"><span class="ql">本日</span><input class="q-made" type="number" min="0" step="1" value="' + (o.madeToday || '') + '" data-key="' + escAttr_(o.key) + '" oninput="nzMadeInput(this)" onchange="nzMadeCommit(this)"></div>' +
+        '<div class="qi rest' + (o.rest <= 0 ? ' done' : '') + '"><span class="ql">のこり</span><span class="cs rest-v">' + escHtml_(String(o.rest)) + '<small>' + U + '</small></span></div>' +
+      '</div>' +
+    '</div>';
+  }
+  // 表示中の日付セクションから、キー（date|取引先|区分|入数）の日付部分で該当セクションを引く
+  function nzFindItemByKey_(key){
+    var dateStr = String(key || '').split('|')[0];
+    for(var i = 0; i < NZ_DAY_ITEMS.length; i++){ if(NZ_DAY_ITEMS[i].date === dateStr) return NZ_DAY_ITEMS[i]; }
+    return null;
   }
   function nzMadeInput(el){
-    if(!LAST_NIZUKURI) return;
     var key = el.getAttribute('data-key');
-    var o = (LAST_NIZUKURI.orders || []).filter(function(x){ return x.key === key; })[0];
+    var item = nzFindItemByKey_(key); if(!item || !item.data) return;
+    var o = (item.data.orders || []).filter(function(x){ return x.key === key; })[0];
     if(!o) return;
     var cases = Math.max(0, Math.round(Number(el.value) || 0));
     o.madeToday = cases;
@@ -598,36 +704,51 @@
     if(restVal) restVal.innerHTML = escHtml_(String(o.rest)) + '<small>' + (o.unit === 'kg' ? 'kg' : 'c/s') + '</small>';
   }
   function nzMadeCommit(el){
-    if(!LAST_NIZUKURI) return;
     var key = el.getAttribute('data-key');
-    var o = (LAST_NIZUKURI.orders || []).filter(function(x){ return x.key === key; })[0];
+    var item = nzFindItemByKey_(key); if(!item || !item.data) return;
+    var o = (item.data.orders || []).filter(function(x){ return x.key === key; })[0];
     if(!o) return;
-    nzPushMade_(o);
+    nzPushMade_(item.date, o);
   }
   var nzMadeSaveTimers = {};
-  function nzPushMade_(o){
+  function nzPushMade_(date, o){
     var key = o.key;
     if(nzMadeSaveTimers[key]) clearTimeout(nzMadeSaveTimers[key]);
     nzMadeSaveTimers[key] = setTimeout(function(){
       gasPost_('nizukuriMadeSave', {
-        date: LAST_NIZUKURI.date, prodDate: LAST_NIZUKURI.date, cust: o.cust, kubun: o.kubun || '',
+        date: date, prodDate: date, cust: o.cust, kubun: o.kubun || '',
         nyusu: o.nyusu || 0, cases: o.madeToday || 0, by: deviceLabel_()
       }, function(d, err){});
     }, 900);
   }
   function nzStateCycle(key){
-    if(!LAST_NIZUKURI) return;
-    var o = (LAST_NIZUKURI.orders || []).filter(function(x){ return x.key === key; })[0];
+    var item = nzFindItemByKey_(key); if(!item || !item.data) return;
+    var o = (item.data.orders || []).filter(function(x){ return x.key === key; })[0];
     if(!o) return;
     o.state = nzStateNext_(o.state);
-    renderNizukuri_(LAST_NIZUKURI);
-    nzPushState_();
+    nzRenderDayItems_();
+    nzPushDayState_(item);
   }
-  var nzStateSaveTimer = null;
-  function nzPushState_(){
+  var nzDayStateSaveTimers = {};
+  function nzPushDayState_(item){
+    var date = item.date;
+    if(nzDayStateSaveTimers[date]) clearTimeout(nzDayStateSaveTimers[date]);
+    nzDayStateSaveTimers[date] = setTimeout(function(){
+      var status = {};
+      (item.data.orders || []).forEach(function(o){ if(o.state && o.state !== 'mikettei') status[o.key] = o.state; });
+      gasPost_('nizukuriStateSave', {
+        date: date, status: status,
+        targetOverride: (item.data.targetOverride != null ? item.data.targetOverride : null),
+        by: deviceLabel_()
+      }, function(d, err){});
+    }, 500);
+  }
+  // ---- 電子黒板ホームタブ（📊）の「本日の合計数量」バー専用：常に"今日"のLAST_NIZUKURIを対象にする ----
+  var nzTodayStateSaveTimer = null;
+  function nzPushTodayState_(){
     if(!LAST_NIZUKURI) return;
-    if(nzStateSaveTimer) clearTimeout(nzStateSaveTimer);
-    nzStateSaveTimer = setTimeout(function(){
+    if(nzTodayStateSaveTimer) clearTimeout(nzTodayStateSaveTimer);
+    nzTodayStateSaveTimer = setTimeout(function(){
       var status = {};
       (LAST_NIZUKURI.orders || []).forEach(function(o){ if(o.state && o.state !== 'mikettei') status[o.key] = o.state; });
       gasPost_('nizukuriStateSave', {
@@ -654,7 +775,7 @@
     LAST_NIZUKURI.targetOverride = v; LAST_NIZUKURI.targetFunes = v;
     renderMainStats_(); nzRenderQtyBar_(LAST_NIZUKURI); fnRender();
     document.getElementById('nz-qty-edit').style.display = 'none';
-    nzPushState_();
+    nzPushTodayState_();
   }
   function nzQtyClear(){
     if(!LAST_NIZUKURI) return;
@@ -662,7 +783,7 @@
     LAST_NIZUKURI.targetFunes = nzDefaultTargetFunes_() || 0;
     renderMainStats_(); nzRenderQtyBar_(LAST_NIZUKURI); fnRender();
     document.getElementById('nz-qty-edit').style.display = 'none';
-    nzPushState_();
+    nzPushTodayState_();
   }
   function renderJissekiStats_(data){
     var box = document.getElementById('jisseki-stats'); if(!box) return;
@@ -690,14 +811,24 @@
 
   function loadBundle_(){
     document.getElementById('status').textContent = '読み込み中…';
-    gasGet_('bundle', { date: todayStr_() }, function(data, err){
+    gasGet_('bundle', { date: todayStr_(), nzDays: NZ_DAYS_WANTED, nzStart: nzViewStart_() }, function(data, err){
       if(err || !data){ document.getElementById('status').textContent = '🟡 通信エラー：' + (err || ''); return; }
       if(data.mainStats) LAST_MAINSTATS = data.mainStats;
       if(data.shift)     LAST_SHIFT = data.shift;
       if(data.hojo)      LAST_HOJO = data.hojo;
       if(data.seisan)    LAST_SEISAN = data.seisan;
       if(data.progressByClient) LAST_PROGRESS_BY_CLIENT = data.progressByClient.byClient || {};
-      if(data.nizukuri)  renderNizukuri_(data.nizukuri);
+      // 電子黒板ホームタブ（📊）の数量バー・実績カードは常に"今日"のデータを使う（表示ウィンドウの影響を受けない）
+      if(data.nizukuri){
+        LAST_NIZUKURI = data.nizukuri;
+        var dtag = document.getElementById('nizukuri-date'); if(dtag) dtag.textContent = '本日 ' + (data.nizukuri.date || '');
+        renderJissekiStats_(LAST_NIZUKURI);
+        nzRenderQtyBar_(LAST_NIZUKURI);
+      }
+      // ⑦-b 他PCで「＋1日」「この日を表示」を押した結果（表示ウィンドウ）をこのPCへ同期
+      if(data.nzView) nzApplyCloudView_(data.nzView);
+      // ⑦-b 本日荷造りタブ：表示ウィンドウぶん（複数日）の注文一覧
+      if(data.nizukuriDays && data.nizukuriDays.days) renderNizukuriDays_(data.nizukuriDays.days);
       renderMainStats_();
       if(data.shizaiAlerts) renderShizaiAlerts_(data.shizaiAlerts);
       renderSkuDiff();
