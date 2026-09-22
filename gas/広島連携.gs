@@ -575,6 +575,39 @@ function nzLogReadAll_(){
   }
   return map;
 }
+// ---- 🔧 一時的な移行用（2026-09-22・一度だけApps Scriptエディタから▶実行する）----
+//   複数日表示を追加した直後、「本日作った分」の生産日を注文の納品日のまま保存してしまう不具合が
+//   あった（getNizukuriFull_のtodayReal修正で解消済み）。そのバグ発生中に保存された行は、生産日が
+//   実際のカレンダー上の今日より先（未来）になっているため確実に判別できる＝該当行の生産日を今日に
+//   書き換える。修正後のコードでは生産日が未来になることは無いので、この関数は今後は不要。
+//   ⚠人が手動実行する関数なので末尾にアンダースコアを付けない（付けるとエディタの実行対象一覧に出ない）。
+function fixFutureProdDateArtifacts(){
+  var sh = nzLogSheet_();
+  var last = sh.getLastRow();
+  if(last < 2){ Logger.log('対象行なし'); return; }
+  var todayReal = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
+  var v = sh.getRange(2, 1, last - 1, 9).getValues();
+  var existing = {};
+  for(var i = 0; i < v.length; i++){ existing[String(v[i][0] || '') + '|' + String(v[i][1] || '').trim()] = i + 2; }
+  var fixed = 0, skipped = 0;
+  for(var i = 0; i < v.length; i++){
+    var key = String(v[i][0] || '');
+    var prodDate = String(v[i][1] || '').trim();
+    if(!prodDate || prodDate <= todayReal) continue;
+    var newMapKey = key + '|' + todayReal;
+    if(existing[newMapKey] && existing[newMapKey] !== (i + 2)){
+      Logger.log('要確認（自動修正スキップ）：行' + (i + 2) + ' key=' + key + ' 生産日' + prodDate +
+        '。今日(' + todayReal + ')ぶんの行が既に存在（行' + existing[newMapKey] + '）＝手動で確認・合算してください');
+      skipped++;
+      continue;
+    }
+    sh.getRange(i + 2, 2).setNumberFormat('@').setValue(todayReal);
+    existing[newMapKey] = i + 2;
+    fixed++;
+    Logger.log('修正：行' + (i + 2) + ' key=' + key + ' 生産日 ' + prodDate + ' → ' + todayReal);
+  }
+  Logger.log(fixed + '件を修正、' + skipped + '件は要確認（上記ログ参照）');
+}
 function nzMadeSave_(body){
   body = body || {};
   var lock = LockService.getScriptLock();
