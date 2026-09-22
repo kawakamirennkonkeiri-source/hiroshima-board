@@ -56,6 +56,7 @@ var CFG = {
   ],
   HAICHI_DEFAULT_CAPACITY: { conveyor: 4 },   // 未設定ゾーンは既定2（後述の関数側で補完）
   HAICHI_SKILL_SHEET: '力量表',      // ⑥ 氏名×ゾーンの○/△/×（直接スプレッドシート編集で調整）
+  HAICHI_PRIO_SHEET: '配置優先',     // ⑨ 氏名×ゾーンの自動配置の優先番号（1が最優先・×は配置不可・空欄は最後回し）。アプリから編集可能
   HAICHI_CFG_SHEET: '配置設定',      // ⑥ ゾーンID/表示名/定員（直接スプレッドシート編集で調整）
   HAICHI_STATE_SHEET: '配置図状態',  // ⑥ 本日の配置・欠勤上書き・応援追加（JSON1行/日付）
 
@@ -130,6 +131,7 @@ function doPost(e){
     else if(action === 'shizaiBackupSave') out = saveShizaiBackup_(body);
     else if(action === 'haichiSave')       out = haichiSave_(body);   // ⑥ 配置図：本日の配置・欠勤上書き・応援追加
     else if(action === 'haichiSkillSave')  out = haichiSkillSave_(body); // ⑥ 力量表：○/△/×をアプリから編集
+    else if(action === 'haichiPrioSave')   out = haichiPrioSave_(body); // ⑨ 配置優先：優先番号をアプリから編集
     else if(action === 'nizukuriStateSave') out = nzStateSave_(body);  // ⑦ 状態(確定/作成済み)・総舟数の当日上書き
     else if(action === 'nizukuriMadeSave')  out = nzMadeSave_(body);   // ⑦ 本日作った分（生産ログupsert）
     else if(action === 'hojoSave')          out = hojoSave_(body);    // ⑧ 圃場（畑）から持ってきた舟数
@@ -1409,6 +1411,66 @@ function haichiReadSkills_(rosterNames){
   return skills;
 }
 
+// ---- ⑨ 配置優先（氏名×ゾーンの自動配置の優先番号。力量表〈○/△/×〉とは別シートで管理。
+//      タップで循環（空欄→1→2→3→4→5→×→空欄）：数字が小さいほど先に配置、×はそのゾーンに配置不可、
+//      空欄は「配置はできるが優先されない（最後に回される）」扱い。アプリから編集可能） ----
+function haichiPrioSheet_(rosterNames){
+  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var name = CFG.HAICHI_PRIO_SHEET || '配置優先';
+  var zones = CFG.HAICHI_ZONES || [];
+  var sh = ss.getSheetByName(name);
+  if(!sh){
+    sh = ss.insertSheet(name);
+    sh.appendRow(['氏名'].concat(zones.map(function(z){ return z.label; })));
+    try{ sh.setFrozenRows(1); }catch(e){}
+  }
+  if(rosterNames && rosterNames.length){
+    var v = sh.getDataRange().getValues();
+    var known = {};
+    for(var r = 1; r < v.length; r++){ var nm = normText_(v[r][0]); if(nm) known[nm] = true; }
+    rosterNames.forEach(function(raw){
+      var nm = normText_(raw); if(!nm || known[nm]) return;
+      var cells = [nm]; zones.forEach(function(){ cells.push(''); });
+      sh.appendRow(cells);
+      known[nm] = true;
+    });
+  }
+  return sh;
+}
+function haichiPrioSave_(body){
+  body = body || {};
+  var lock = LockService.getScriptLock();
+  try{ lock.waitLock(15000); }catch(e){ return { ok:false, error:'busy（他の保存処理中）' }; }
+  try{
+    var name = normText_(body.name || ''); if(!name) return { ok:false, error:'nameが空です' };
+    var zoneId = String(body.zoneId || '');
+    var value = String(body.value || '');
+    var zones = CFG.HAICHI_ZONES || [];
+    var idx = -1;
+    for(var i = 0; i < zones.length; i++){ if(zones[i].id === zoneId) { idx = i; break; } }
+    if(idx < 0) return { ok:false, error:'不明なゾーンID: ' + zoneId };
+    var sh = haichiPrioSheet_([name]);   // 未登録ならこの呼び出しで全ゾーン空欄で追記される
+    var v = sh.getDataRange().getValues();
+    for(var r = 1; r < v.length; r++){
+      if(normText_(v[r][0]) === name){ sh.getRange(r + 1, 2 + idx).setValue(value); return { ok:true }; }
+    }
+    return { ok:false, error:'配置優先に氏名が見つかりませんでした: ' + name };
+  } finally { try{ lock.releaseLock(); }catch(e){} }
+}
+function haichiReadPrio_(rosterNames){
+  var sh = haichiPrioSheet_(rosterNames);
+  var v = sh.getDataRange().getValues();
+  var zones = CFG.HAICHI_ZONES || [];
+  var prio = {};
+  for(var r = 1; r < v.length; r++){
+    var nm = normText_(v[r][0]); if(!nm) continue;
+    var row = {};
+    zones.forEach(function(z, i){ row[z.id] = normText_(v[r][1 + i]) || ''; });
+    prio[nm] = row;
+  }
+  return prio;
+}
+
 // ---- 配置設定（ゾーンID・表示名・定員。定員は曽我さんがスプレッドシートを直接編集して調整） ----
 function haichiCfgSheet_(){
   var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
@@ -1493,6 +1555,7 @@ function getHaichiGet_(params){
   if(shift.error) return { error: shift.error };
   var rosterNames = shift.workers.map(function(w){ return w.name; });
   var skills = haichiReadSkills_(rosterNames);
+  var prio = haichiReadPrio_(rosterNames);
   var zones = haichiReadZoneCfg_();
   var state = haichiReadState_(shift.date);
   return {
@@ -1500,6 +1563,7 @@ function getHaichiGet_(params){
     zones: zones,
     workers: shift.workers.map(function(w){ return { name: w.name, present: w.present }; }),
     skills: skills,
+    prio: prio,
     assignment: state.assignment || {},
     absentOverride: state.absentOverride || [],
     extra: state.extra || []

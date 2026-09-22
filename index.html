@@ -59,11 +59,52 @@
   .nz-qty-lbl b{ color:var(--blue-deep); font-size:15px; }
   .nz-btn{ appearance:none; cursor:pointer; font-family:inherit; font-size:13px; font-weight:800; border:none; background:var(--blue); color:#fff; padding:8px 16px; border-radius:16px; }
   .nz-btn.sub{ background:#fff; color:var(--blue-deep); border:1.5px solid var(--blue); padding:6px 12px; font-size:12px; }
-  .nz-tbl .nz-state-btn{ appearance:none; cursor:pointer; font-family:inherit; font-size:12px; font-weight:800; border:1.5px solid var(--grid); background:#fff; color:var(--text-secondary); padding:5px 10px; border-radius:14px; white-space:nowrap; }
-  .nz-tbl .nz-state-btn.st-kakutei{ background:#fff6e6; border-color:var(--amber); color:var(--amber); }
-  .nz-tbl .nz-state-btn.st-sakusei{ background:var(--green); border-color:var(--green); color:#fff; }
-  .nz-tbl .nz-new{ display:inline-block; background:var(--red); color:#fff; font-size:10px; font-weight:800; border-radius:8px; padding:1px 6px; margin-left:4px; vertical-align:middle; }
-  .nz-tbl input.nz-made{ width:64px; font-family:inherit; font-size:14px; text-align:right; padding:5px 7px; border:1px solid var(--grid); border-radius:6px; }
+
+  /* ===== 本日荷造りタブ（センター電子黒板と同じカード行デザイン） ===== */
+  .nz-summary{ display:flex; gap:20px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
+  .nz-summary .s{ text-align:right; }
+  .nz-summary .s .lbl{ font-size:11px; color:var(--muted); font-weight:700; }
+  .nz-summary .s .val{ font-size:24px; font-weight:800; font-variant-numeric:tabular-nums; line-height:1; color:var(--blue-deep); }
+  .nz-summary .s .val small{ font-size:12px; font-weight:700; color:var(--text-secondary); margin-left:2px; }
+  .nz-summary .s.done .val{ color:var(--green); }
+  .nz-summary .s.pending .val{ color:var(--amber); }
+  .nz-rows{ display:flex; flex-direction:column; gap:10px; }
+  .nz-row{ background:var(--surface-1); border:1px solid var(--border); border-radius:12px; padding:10px 14px; display:flex; flex-direction:column; gap:8px; }
+  .nz-row.is-done{ opacity:.62; }
+  .nz-row.is-done .cust{ text-decoration:line-through; text-decoration-color:#9bbf9b; }
+  .nz-row.is-new{ box-shadow:inset 4px 0 0 var(--red); }
+  .nz-row .nz-r1{ display:grid; grid-template-columns:28px 1fr auto 128px; align-items:center; gap:8px; }
+  .nz-row .idx{ text-align:center; font-size:14px; font-weight:800; color:var(--muted); font-variant-numeric:tabular-nums; }
+  .nz-row .cust{ font-size:16px; font-weight:800; color:var(--text-primary); line-height:1.2; }
+  .nz-row .nyusu{ font-size:12px; font-weight:700; color:var(--text-secondary); font-variant-numeric:tabular-nums; white-space:nowrap; }
+  .nz-row .cust .bunrui{ display:inline-block; font-size:11px; font-weight:800; color:#fff; background:var(--blue); padding:1px 8px; border-radius:10px; margin-left:6px; vertical-align:middle; }
+  .nz-row .cust .bunrui.arai{ background:#2a9d8f; }
+  .nz-row .cust .bunrui.tsuchi{ background:var(--amber); }
+  .nz-row .cust .bunrui.mup{ background:#556070; }
+  .nz-row .cust .bunrui.cs{ background:#4a3aa7; }
+  .nz-row .cust .bunrui.b-kg{ background:#556070; }
+  .nz-row .new-flag{ display:inline-block; font-size:10px; font-weight:800; color:#fff; background:var(--red); padding:1px 7px; border-radius:9px; margin-left:6px; letter-spacing:.03em; vertical-align:middle; }
+  .nz-status{ appearance:none; cursor:pointer; font-family:inherit; width:100%; border:2px solid transparent; border-radius:20px; padding:8px 6px; font-size:13px; font-weight:800; text-align:center; }
+  .nz-status:active{ transform:scale(0.97); }
+  .nz-status[data-st="mikettei"]{ background:#fff7e6; border-color:#f2c661; color:#9a6a00; }
+  .nz-status[data-st="kakutei"]{ background:#e8f1fd; border-color:#7fb0ec; color:var(--blue-deep); }
+  .nz-status[data-st="sakusei"]{ background:#e7f6e7; border-color:#7ecb7e; color:#1c7d1c; }
+  .nz-row .qc4{ display:grid; grid-template-columns:repeat(4,1fr); gap:6px; }
+  .nz-row .qc4 .qi{ background:var(--surface-0); border-radius:8px; padding:5px 5px 6px; text-align:center; line-height:1.15; }
+  .nz-row .qc4 .ql{ display:block; font-size:10px; font-weight:800; color:var(--muted); margin-bottom:2px; }
+  .nz-row .qc4 .cs{ font-size:18px; font-weight:800; font-variant-numeric:tabular-nums; color:var(--text-primary); }
+  .nz-row .qc4 .cs small{ font-size:10px; font-weight:700; color:var(--muted); margin-left:1px; }
+  .nz-row .qc4 .total .cs{ color:var(--blue-deep); }
+  .nz-row .qc4 .rest .cs{ color:var(--text-primary); }
+  .nz-row .qc4 .rest.done .cs{ color:var(--green); }
+  .nz-row .qc4 input{ width:100%; font-family:inherit; font-size:18px; font-weight:800; text-align:center; padding:3px 2px; border:1px solid var(--grid); border-radius:6px; font-variant-numeric:tabular-nums; }
+  .nz-row .qc4 input.q-made{ color:#1c7d1c; }
+
+  /* ===== 配置優先テーブル（配置図タブ。力量表と同じ見た目・タップで優先番号を切替） ===== */
+  .haichi-prio-btn{ appearance:none; cursor:pointer; font-family:inherit; font-size:13px; font-weight:800; border:1.5px solid var(--grid); background:#fff; color:var(--text-secondary); width:30px; height:30px; border-radius:8px; }
+  .haichi-prio-btn.p-num{ background:var(--blue); border-color:var(--blue); color:#fff; }
+  .haichi-prio-btn.p-bad{ background:var(--red); border-color:var(--red); color:#fff; }
+  .haichi-prio-btn.p-blank{ background:#fff; border-color:var(--grid); color:var(--muted); }
 
   /* ===== 生産者タブ（センター電子黒板から移植・簡略版） ===== */
   .seisan-wrap{ padding:0; }
@@ -255,14 +296,15 @@
   <div class="foot-note">※ 数字は発注書スプレッドシート「進捗」「発注書」シートを読み取り専用で表示しているだけです。発注書スプレッドシートには一切書き込みません。</div>
 </div>
 
-<!-- ===== 本日荷造りタブ（注文一覧・状態管理・生産ログ） ===== -->
+<!-- ===== 本日荷造りタブ（注文一覧・状態管理・生産ログ。センター電子黒板と同じカード行デザイン） ===== -->
 <div id="view-nizukuri" class="view">
   <div class="card">
-    <h3>📦 本日の注文一覧 <span class="tag" id="nizukuri-date"></span></h3>
-    <table class="progress-tbl nz-tbl" id="nizukuri-table">
-      <thead><tr><th>状態</th><th>取引先</th><th>区分</th><th style="text-align:right;">入数</th><th style="text-align:right;">合計</th><th style="text-align:right;">累計</th><th style="text-align:right;">本日</th><th style="text-align:right;">のこり</th></tr></thead>
-      <tbody id="nizukuri-tbody"></tbody>
-    </table>
+    <h3>📦 本日荷造り <span class="tag" id="nizukuri-date"></span></h3>
+    <div class="nz-summary">
+      <div class="s done"><div class="lbl">作成済み</div><div class="val" id="nz-done-count">0<small>件</small></div></div>
+      <div class="s pending"><div class="lbl">未確定</div><div class="val" id="nz-pending-count">0<small>件</small></div></div>
+    </div>
+    <div class="nz-rows" id="nizukuri-rows"></div>
     <div class="empty-note" id="nizukuri-empty" style="display:none;">本日の注文はまだ無いようです（発注書シートに本日の行が見つからない場合も含む）。</div>
   </div>
   <div class="foot-note">状態のボタンを押すと「未確定→確定→作成済み」の順で切り替わります。累計＝今日より前に作った分の合計（自動・手入力で修正可）／本日＝今日作った分／のこり＝合計−累計−本日。</div>
@@ -326,6 +368,10 @@
   <div class="haichi-section-ttl">🎛 力量表（タップで ○→△→×→○ と切り替え。×の工程には自動配置されません）</div>
   <div id="haichi-skill-wrap"></div>
   <div class="haichi-skill-hint">保存先：【広島】電子黒板データ内「力量表」シート（このアプリから編集できます）。</div>
+
+  <div class="haichi-section-ttl">🔢 配置優先（タップで空欄→1→2→3→4→5→×→空欄 と切り替え。数字が小さいほど自動配置で先に埋まります。×はそのゾーンに配置しません。空欄は配置できますが優先されず最後に回されます）</div>
+  <div id="haichi-prio-wrap"></div>
+  <div class="haichi-skill-hint">保存先：【広島】電子黒板データ内「配置優先」シート（このアプリから編集できます）。「🔀 自動配置」ボタンは、この優先番号が小さい人から順にゾーンへ配置します。</div>
 </div>
 
 <!-- ===== 圃場（畑）タブ（手入力のみ。生産DX連携は広島には無いため簡易版） ===== -->
@@ -436,7 +482,12 @@
     //    同名候補が複数あっても最初の1件だけを採用するので一意に決まる。ユーザーへの警告表示は不要）
     var mstats = (LAST_MAINSTATS && !LAST_MAINSTATS.error && LAST_MAINSTATS.stats) ? LAST_MAINSTATS.stats : {};
     if('収穫舟数' in mstats) cards.push({ lbl: '収穫舟数', val: (mstats['収穫舟数'] === '' ? '―' : mstats['収穫舟数']), u: '舟', sub: '発注書シートの本日行より（参考値）' });
-    if('荷造り舟数' in mstats) cards.push({ lbl: '荷造り舟数（予定）', val: (mstats['荷造り舟数'] === '' ? '―' : mstats['荷造り舟数']), u: '舟', sub: '発注書シートの本日行より' });
+    // ① 本日の荷造り舟数＝発注書の荷造り舟数（予定）＋生産者タブの収穫舟数合計
+    if('荷造り舟数' in mstats){
+      var baseFune = (mstats['荷造り舟数'] === '') ? null : Number(mstats['荷造り舟数']);
+      var seiFune = (LAST_SEISAN && LAST_SEISAN.totalFunes) ? Number(LAST_SEISAN.totalFunes) : 0;
+      cards.push({ lbl: '本日の荷造り舟数', val: (baseFune != null ? (baseFune + seiFune) : '―'), u: '舟', sub: '発注書の荷造り舟数 + 生産者タブの収穫舟数' });
+    }
 
     // ② 荷造り予定㎏（本日の注文一覧の合計。発注書シートより）
     if(LAST_NIZUKURI && !LAST_NIZUKURI.error){
@@ -451,33 +502,56 @@
 
   // ⑤ 本日の注文一覧（発注書シートより・取引先ごとの数量とkg）
   // ⑦ 状態(未確定/確定/作成済み)・NEWバッジ・合計/累計/本日/のこりの4段・実績カード・数量変更
+  //   センター電子黒板と同じカード行デザイン（nz-row/nz-r1/qc4/nz-status）で描画する。
   function nzStateLabel_(st){ return st === 'kakutei' ? '確定' : (st === 'sakusei' ? '作成済み' : '未確定'); }
   function nzStateNext_(st){ return st === 'mikettei' ? 'kakutei' : (st === 'kakutei' ? 'sakusei' : 'mikettei'); }
+  function nzStateMark_(st){ return st === 'kakutei' ? '🔵' : (st === 'sakusei' ? '🟢' : '🟡'); }
+  function nzBunruiClass_(kubun){
+    var k = String(kubun || '');
+    if(k.indexOf('洗い') >= 0) return 'arai';
+    if(k.indexOf('土付き') >= 0) return 'tsuchi';
+    if(k === 'Mup') return 'mup';
+    if(/^(C|\d*S)$/.test(k)) return 'cs';
+    return '';
+  }
   function renderNizukuri_(data){
     LAST_NIZUKURI = data;
     document.getElementById('nizukuri-date').textContent = (data && data.date) || '';
-    var tbody = document.getElementById('nizukuri-tbody');
+    var rows = document.getElementById('nizukuri-rows');
     var empty = document.getElementById('nizukuri-empty');
     renderJissekiStats_(data || {});
     nzRenderQtyBar_(data || {});
     if(!data || data.error || !data.orders || !data.orders.length){
-      tbody.innerHTML = ''; empty.style.display = 'block';
+      rows.innerHTML = ''; empty.style.display = 'block';
+      nzRenderSummary_([]);
       return;
     }
     empty.style.display = 'none';
-    tbody.innerHTML = data.orders.map(function(o){
-      var stCls = o.state === 'kakutei' ? 'st-kakutei' : (o.state === 'sakusei' ? 'st-sakusei' : '');
-      return '<tr>' +
-        '<td><button class="nz-state-btn ' + stCls + '" onclick="nzStateCycle(\'' + escAttr_(o.key) + '\')">' + escHtml_(nzStateLabel_(o.state)) + '</button></td>' +
-        '<td>' + escHtml_(o.cust) + (o.isNew ? '<span class="nz-new">NEW</span>' : '') + '</td>' +
-        '<td>' + escHtml_(o.kubun || '') + '</td>' +
-        '<td class="val">' + escHtml_(String(o.nyusu)) + (o.unit === 'kg' ? 'kg' : '') + '</td>' +
-        '<td class="val">' + escHtml_(String(Math.round(o.qty || 0))) + (o.unit === 'kg' ? 'kg' : 'c/s') + '</td>' +
-        '<td class="val">' + escHtml_(String(o.madePrev || 0)) + '</td>' +
-        '<td class="val"><input class="nz-made" type="number" min="0" step="1" value="' + (o.madeToday || '') + '" data-key="' + escAttr_(o.key) + '" oninput="nzMadeInput(this)" onchange="nzMadeCommit(this)"></td>' +
-        '<td class="val nz-rest">' + escHtml_(String(o.rest)) + '</td>' +
-      '</tr>';
-    }).join('') + '<tr><td colspan="4" style="text-align:right;font-weight:800;">合計㎏</td><td class="val" style="font-weight:800;" colspan="4">' + escHtml_(String(data.totalKg || 0)) + 'kg</td></tr>';
+    rows.innerHTML = data.orders.map(function(o, idx){
+      var isKg = o.unit === 'kg';
+      var U = isKg ? 'kg' : 'c/s';
+      return '<div class="nz-row' + (o.state === 'sakusei' ? ' is-done' : '') + (o.isNew ? ' is-new' : '') + '">' +
+        '<div class="nz-r1">' +
+          '<div class="idx">' + (idx + 1) + '</div>' +
+          '<div class="cust">' + escHtml_(o.cust) + (o.kubun ? '<span class="bunrui ' + nzBunruiClass_(o.kubun) + '">' + escHtml_(o.kubun) + '</span>' : '') + (isKg ? '<span class="bunrui b-kg">kg</span>' : '') + (o.isNew ? '<span class="new-flag">NEW</span>' : '') + '</div>' +
+          '<div class="nyusu">' + (isKg ? '<small>kgで入力</small>' : (o.nyusu ? '入数 ' + escHtml_(String(o.nyusu)) : '<small>入数 —</small>')) + '</div>' +
+          '<button class="nz-status" data-st="' + o.state + '" onclick="nzStateCycle(\'' + escAttr_(o.key) + '\')">' + nzStateMark_(o.state) + ' ' + escHtml_(nzStateLabel_(o.state)) + '</button>' +
+        '</div>' +
+        '<div class="qc4">' +
+          '<div class="qi total"><span class="ql">合計</span><span class="cs">' + escHtml_(String(Math.round(o.qty || 0))) + '<small>' + U + '</small></span></div>' +
+          '<div class="qi prev"><span class="ql">累計</span><span class="cs">' + escHtml_(String(o.madePrev || 0)) + '<small>' + U + '</small></span></div>' +
+          '<div class="qi made"><span class="ql">本日</span><input class="q-made" type="number" min="0" step="1" value="' + (o.madeToday || '') + '" data-key="' + escAttr_(o.key) + '" oninput="nzMadeInput(this)" onchange="nzMadeCommit(this)"></div>' +
+          '<div class="qi rest' + (o.rest <= 0 ? ' done' : '') + '"><span class="ql">のこり</span><span class="cs rest-v">' + escHtml_(String(o.rest)) + '<small>' + U + '</small></span></div>' +
+        '</div>' +
+      '</div>';
+    }).join('');
+    nzRenderSummary_(data.orders);
+  }
+  function nzRenderSummary_(orders){
+    var done = 0, pending = 0;
+    (orders || []).forEach(function(o){ if(o.state === 'sakusei') done++; else if(o.state === 'mikettei' || !o.state) pending++; });
+    var d = document.getElementById('nz-done-count'); if(d) d.innerHTML = done + '<small>件</small>';
+    var p = document.getElementById('nz-pending-count'); if(p) p.innerHTML = pending + '<small>件</small>';
   }
   function nzMadeInput(el){
     if(!LAST_NIZUKURI) return;
@@ -487,9 +561,11 @@
     var cases = Math.max(0, Math.round(Number(el.value) || 0));
     o.madeToday = cases;
     o.rest = Math.round(o.qty || 0) - (o.madePrev || 0) - cases;
-    var tr = el.closest('tr');
-    var restCell = tr ? tr.querySelector('.nz-rest') : null;
-    if(restCell) restCell.textContent = o.rest;
+    var row = el.closest('.nz-row');
+    var restLine = row ? row.querySelector('.qi.rest') : null;
+    var restVal = row ? row.querySelector('.rest-v') : null;
+    if(restLine) restLine.classList.toggle('done', o.rest <= 0);
+    if(restVal) restVal.innerHTML = escHtml_(String(o.rest)) + '<small>' + (o.unit === 'kg' ? 'kg' : 'c/s') + '</small>';
   }
   function nzMadeCommit(el){
     if(!LAST_NIZUKURI) return;
@@ -810,6 +886,7 @@
     if(!HAICHI.absentOverride) HAICHI.absentOverride = [];
     if(!HAICHI.extra) HAICHI.extra = [];
     if(!HAICHI.skills) HAICHI.skills = {};
+    if(!HAICHI.prio) HAICHI.prio = {};
     if(!HAICHI.zones) HAICHI.zones = [];
     if(!HAICHI.workers) HAICHI.workers = [];
   }
@@ -835,12 +912,24 @@
     var a = HAICHI.assignment;
     Object.keys(a).forEach(function(z){ a[z] = (a[z] || []).filter(function(n){ return n !== name; }); });
   }
+  // ⑨ そのゾーンに配置してよいか（力量表の×・配置優先の×のどちらかがあれば不可）
+  function haichiCanPlace_(name, zoneId){
+    var sk = HAICHI.skills[name]; var skV = sk ? sk[zoneId] : '○';
+    if(skV === '×') return false;
+    var pr = HAICHI.prio[name]; var prV = pr ? pr[zoneId] : '';
+    if(prV === '×') return false;
+    return true;
+  }
+  // ⑨ 配置優先の優先番号（数字が小さいほど先。空欄＝配置はできるが優先されず最後に回す＝Infinity）
+  function haichiPrioNum_(name, zoneId){
+    var pr = HAICHI.prio[name]; var v = pr ? pr[zoneId] : '';
+    var n = parseInt(v, 10);
+    return (!isNaN(n) && n > 0) ? n : Infinity;
+  }
   function haichiUnassignedCandidates_(zoneId){
-    var skills = HAICHI.skills;
     return haichiAttendingNames_().filter(function(nm){
       if(haichiIsAssignedAnywhere_(nm)) return false;
-      var sk = skills[nm]; var v = sk ? sk[zoneId] : '○';
-      return v !== '×';
+      return haichiCanPlace_(nm, zoneId);
     });
   }
 
@@ -881,29 +970,26 @@
       if(el) el.textContent = '先に未配置（下の丸）の人をタップしてから、空き枠をタップしてください';
       return;
     }
-    var sk = HAICHI.skills[haichiSelectedPerson];
-    var v = sk ? sk[zoneId] : '○';
-    if(v === '×'){ window.alert(haichiSelectedPerson + 'さんはこのゾーンに配置できません（力量表で×）'); return; }
+    if(!haichiCanPlace_(haichiSelectedPerson, zoneId)){ window.alert(haichiSelectedPerson + 'さんはこのゾーンに配置できません（力量表または配置優先で×）'); return; }
     HAICHI.assignment[zoneId] = HAICHI.assignment[zoneId] || [];
     HAICHI.assignment[zoneId].push(haichiSelectedPerson);
     haichiSelectedPerson = null;
     haichiRender(); haichiPushSave();
   }
 
+  // ⑨ 配置優先の番号（小さいほど先）でゾーンごとに候補者を並べ、定員まで詰める。
+  //   番号が同じ・どちらも未設定の場合は出勤者一覧の並び順のまま（安定ソート。乱数タイブレークはしない簡易版）。
   function haichiAutoAssign(){
     if(!HAICHI) return;
-    var zones = HAICHI.zones, skills = HAICHI.skills;
+    var zones = HAICHI.zones;
     var assignment = {}; zones.forEach(function(z){ assignment[z.id] = []; });
     var placed = {};
     var attending = haichiAttendingNames_();
     zones.forEach(function(z){
       var room = z.capacity - assignment[z.id].length;
       if(room <= 0) return;
-      var cands = attending.filter(function(nm){
-        if(placed[nm]) return false;
-        var sk = skills[nm]; var v = sk ? sk[z.id] : '○';
-        return v !== '×';
-      });
+      var cands = attending.filter(function(nm){ return !placed[nm] && haichiCanPlace_(nm, z.id); });
+      cands.sort(function(a, b){ return haichiPrioNum_(a, z.id) - haichiPrioNum_(b, z.id); });
       cands.slice(0, room).forEach(function(nm){ assignment[z.id].push(nm); placed[nm] = true; });
     });
     HAICHI.assignment = assignment;
@@ -927,7 +1013,7 @@
 
   function haichiRender(){
     if(!HAICHI) return;
-    haichiRenderAttend_(); haichiRenderBoard_(); haichiRenderSkillTable_();
+    haichiRenderAttend_(); haichiRenderBoard_(); haichiRenderSkillTable_(); haichiRenderPrioTable_();
   }
   function haichiRenderAttend_(){
     var box = document.getElementById('haichi-attend'); if(!box) return;
@@ -996,6 +1082,42 @@
       if(!el) return;
       if(d && d.ok){ el.textContent = '🟢 力量表を保存しました（' + name + '・' + zoneId + '＝' + next + '）'; }
       else { el.textContent = '🟡 力量表の保存に失敗しました（' + ((d && d.error) || err || '') + '）'; }
+    });
+  }
+
+  // ⑨ 配置優先：空欄→1→2→3→4→5→×→空欄 と循環（力量表と同じタップ方式）
+  var HAICHI_PRIO_CYCLE = ['', '1', '2', '3', '4', '5', '×'];
+  function haichiCyclePrio_(v){
+    var i = HAICHI_PRIO_CYCLE.indexOf(String(v || ''));
+    return HAICHI_PRIO_CYCLE[(i < 0 ? 0 : i + 1) % HAICHI_PRIO_CYCLE.length];
+  }
+  function haichiPrioBtnClass_(v){ return v === '×' ? 'p-bad' : (v ? 'p-num' : 'p-blank'); }
+  function haichiRenderPrioTable_(){
+    var box = document.getElementById('haichi-prio-wrap'); if(!box) return;
+    var names = haichiRoster_().map(function(r){ return r.name; });
+    if(!names.length){ box.innerHTML = '<span style="font-size:12px;color:var(--muted);">出勤者がいません</span>'; return; }
+    var head = '<tr><th>氏名</th>' + HAICHI.zones.map(function(z){ return '<th>' + escHtml_(z.label) + '</th>'; }).join('') + '</tr>';
+    var rows = names.map(function(nm){
+      var pr = HAICHI.prio[nm] || {};
+      var cells = HAICHI.zones.map(function(z){
+        var v = pr[z.id] || '';
+        return '<td><button class="haichi-prio-btn ' + haichiPrioBtnClass_(v) + '" onclick="haichiPrioCycle(\'' + escAttr_(nm) + '\',\'' + z.id + '\')">' + (v || '―') + '</button></td>';
+      }).join('');
+      return '<tr><td>' + escHtml_(nm) + '</td>' + cells + '</tr>';
+    }).join('');
+    box.innerHTML = '<table class="haichi-skill-tbl"><thead>' + head + '</thead><tbody>' + rows + '</tbody></table>';
+  }
+  function haichiPrioCycle(name, zoneId){
+    if(!HAICHI.prio[name]) HAICHI.prio[name] = {};
+    var cur = HAICHI.prio[name][zoneId] || '';
+    var next = haichiCyclePrio_(cur);
+    HAICHI.prio[name][zoneId] = next;
+    haichiRenderPrioTable_();
+    gasPost_('haichiPrioSave', { name: name, zoneId: zoneId, value: next }, function(d, err){
+      var el = document.getElementById('haichi-status');
+      if(!el) return;
+      if(d && d.ok){ el.textContent = '🟢 配置優先を保存しました（' + name + '・' + zoneId + '＝' + (next || '空欄') + '）'; }
+      else { el.textContent = '🟡 配置優先の保存に失敗しました（' + ((d && d.error) || err || '') + '）'; }
     });
   }
 
