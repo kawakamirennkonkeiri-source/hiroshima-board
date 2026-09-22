@@ -38,6 +38,7 @@ var CFG = {
   DATA_SS_ID: '1m7r5lk-Tgkn2UsvMxiGVRxF3qyaFHE0aIXa3AtIxa0w',
   PROGRESS_TEST_SHEET: '進捗テスト',      // ①「進捗シートへ数字を飛ばす」機能の試験運用ログ
   SEISAN_SHEET: '生産者記録',            // ② 生産者の持ち込み舟数・出来高
+  HOJO_SHEET: '圃場舟数',                // ⑧ 圃場（畑）から持ってきた舟数（手入力のみ。広島にはセンターの生産DX連携が無いため簡易版）
   SHIZAI_SHEET: '資材データ',            // ③ 資材管理アプリ：クラウド共有データ本体
   SHIZAI_BACKUP_SHEET: '資材バックアップ', // ③ 月末棚卸ごとの世代バックアップ（追記のみ）
   SHIZAI_STOCK_SHEET: '月末棚卸（実数）',  // ③ 人が読める実数の表
@@ -96,10 +97,13 @@ function doGet(e){
     else if(type === 'haichiGet')    out = getHaichiGet_(e.parameter);             // ⑥ 配置図
     else if(type === 'debugShift')   out = debugShift_(e.parameter);               // ⑥ 診断用
     else if(type === 'nizukuriFull') out = getNizukuriFull_(e.parameter);          // ⑦ 状態管理・生産ログ・実績計算つきの本日荷造り
+    else if(type === 'hojoGet')      out = hojoGet_(e.parameter);                  // ⑧ 圃場（畑）から持ってきた舟数
+    else if(type === 'progressByClient') out = getProgressByClient_(e.parameter);  // 🔍 進捗差分：発注書「進捗」シートの取引先別荷造数
+    else if(type === 'debugProgress') out = debugProgress_(e.parameter);           // 🔍 診断用
     else if(type === 'bundle')       out = getBundle_(e.parameter);
     else if(type === 'debug')        out = debugTop_();
     else if(type === 'debugOrder')   out = debugOrder_(e.parameter);
-    else out = { error:'type を progress / funes / progressTestGet / seisanGet / nizukuri / mainStats / shizaiAlerts / shizaiLoad / shizaiMeta / shizaiBackupList / shizaiBackupGet / shizaiUsage / shift / haichiGet / nizukuriFull / bundle / debug のいずれかで指定してください' };
+    else out = { error:'type を progress / funes / progressTestGet / seisanGet / nizukuri / mainStats / shizaiAlerts / shizaiLoad / shizaiMeta / shizaiBackupList / shizaiBackupGet / shizaiUsage / shift / haichiGet / nizukuriFull / hojoGet / progressByClient / bundle / debug のいずれかで指定してください' };
   }catch(err){
     out = { error: String(err && err.message || err) };
   }
@@ -128,6 +132,7 @@ function doPost(e){
     else if(action === 'haichiSkillSave')  out = haichiSkillSave_(body); // ⑥ 力量表：○/△/×をアプリから編集
     else if(action === 'nizukuriStateSave') out = nzStateSave_(body);  // ⑦ 状態(確定/作成済み)・総舟数の当日上書き
     else if(action === 'nizukuriMadeSave')  out = nzMadeSave_(body);   // ⑦ 本日作った分（生産ログupsert）
+    else if(action === 'hojoSave')          out = hojoSave_(body);    // ⑧ 圃場（畑）から持ってきた舟数
     else out = { ok:false, error:'unknown action: ' + action };
   }catch(err){
     out = { ok:false, error:String(err && err.message || err) };
@@ -148,7 +153,9 @@ function getBundle_(params){
     nizukuri:     safe(function(){ return getNizukuriFull_(params); }),   // ⑦ 状態管理・生産ログ・実績計算つき
     mainStats:    safe(function(){ return getMainStatsToday_(params); }),
     shizaiAlerts: safe(function(){ return getShizaiAlerts_(); }),
-    shift:        safe(function(){ return getHiroshimaShiftToday_(params); })
+    shift:        safe(function(){ return getHiroshimaShiftToday_(params); }),
+    hojo:         safe(function(){ return hojoGet_(params); }),                // ⑧ 舟数モニター・歩留まりの分母に使用
+    progressByClient: safe(function(){ return getProgressByClient_(params); }) // 🔍 進捗差分タブ用
     // ⚠配置図（haichiGet/haichiSave）は生産者タブと同様、タブを開いた時だけ読み込む＝
     //   30秒バンドルポーリングの対象には含めない（負荷を増やさないため）
   };
@@ -687,18 +694,27 @@ function getNizukuriFull_(params){
     if(o.isCS) csKg += kg;
   });
 
-  // 舟数（歩留まりの分母）＝収穫舟数（発注書funes）＋生産者タブの収穫舟数合計（広島には圃場タブが無いため）
-  var funesToday = 0;
+  // 舟数（歩留まりの分母）＝圃場（畑）タブの合計＋生産者タブの収穫舟数合計
+  //   （センター電子黒板と同じ考え方＝発注書のセルではなく現場の入力を実績として使う。2026-09-22）。
+  //   圃場タブがまだ入力されていない日は、従来通り発注書「収穫舟数」列（mainStats経由）を暫定値として使う。
+  var hojoFunes = 0;
   try{
-    var f = getFunesToday_(params);
-    if(f && f.matches && f.matches.length) funesToday = Number(f.matches[0].value) || 0;
+    var h = hojoGet_(params);
+    if(h && h.total) hojoFunes = Number(h.total) || 0;
   }catch(e){}
   var seisanFunes = 0;
   try{
     var s = seisanGet_(params);
     if(s && s.totalFunes) seisanFunes = Number(s.totalFunes) || 0;
   }catch(e){}
-  var totalFunes = funesToday + seisanFunes;
+  var fallbackFunes = 0;
+  if(hojoFunes <= 0){
+    try{
+      var ms = getMainStatsToday_(params);
+      if(ms && ms.stats && ms.stats['収穫舟数'] != null && ms.stats['収穫舟数'] !== '') fallbackFunes = Number(ms.stats['収穫舟数']) || 0;
+    }catch(e){}
+  }
+  var totalFunes = (hojoFunes > 0 ? hojoFunes : fallbackFunes) + seisanFunes;
   var budomari = (totalFunes > 0) ? (allKg / totalFunes) : null;
 
   // 加工率＝発注書「進捗」シートのCS率を優先（読み取りのみ）。取得できなければ板集計にフォールバック
@@ -895,6 +911,144 @@ function seisanSave_(body){
     }));
     return { ok:true, saved: rowsN, date: date, totalFunes: totalFunes, totalKg: Math.round(totalKg*10)/10 };
   } finally { try{ lock.releaseLock(); }catch(e){} }
+}
+
+// ============================================================
+// ⑧ 圃場（畑）：本日持ってきた舟数の記録（保存先はDATA_SS_ID内のみ）
+//   センター電子黒板の圃場タブと同じ考え方だが、広島には「生産DX（朝礼ボード）」の連携先が無いため
+//   圃場名の自動取り込みは行わない＝手入力のみの簡易版（曽我さん確認済み・2026-09-22）。
+//   列＝日付/圃場名/舟数/更新日時
+// ============================================================
+function hojoSheet_(){
+  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var name = CFG.HOJO_SHEET || '圃場舟数';
+  var sh = ss.getSheetByName(name);
+  if(!sh){ sh = ss.insertSheet(name); sh.appendRow(['日付','圃場名','舟数','更新日時']); try{ sh.setFrozenRows(1); }catch(e){} }
+  return sh;
+}
+function hojoGet_(params){
+  params = params || {};
+  var sh = hojoSheet_();
+  var date = String(params.date || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
+  var v = sh.getDataRange().getValues();
+  var fields = [], total = 0;
+  for(var r = 1; r < v.length; r++){
+    var d0 = v[r][0];
+    var dstr = (d0 instanceof Date) ? Utilities.formatDate(d0, CFG.TZ, 'yyyy-MM-dd') : String(d0).trim();
+    if(dstr !== date) continue;
+    var name = String(v[r][1] || '').trim(); if(!name) continue;
+    var funes = Number(v[r][2]) || 0;
+    fields.push({ name: name, funes: funes });
+    total += funes;
+  }
+  return { date: date, fields: fields, total: total };
+}
+function hojoSave_(body){
+  body = body || {};
+  var lock = LockService.getScriptLock();
+  try{ lock.waitLock(20000); }catch(e){ return { ok:false, error:'busy（他の保存処理中）' }; }
+  try{
+    var sh = hojoSheet_();
+    var HEAD = ['日付','圃場名','舟数','更新日時'];
+    var date = String(body.date || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
+    var now  = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd HH:mm');
+    var fields = (body.fields instanceof Array) ? body.fields : [];
+
+    var data = sh.getDataRange().getValues();
+    var kept = [ (data.length ? data[0] : HEAD) ];
+    for(var i = 1; i < data.length; i++){
+      var d0 = data[i][0];
+      var dstr = (d0 instanceof Date) ? Utilities.formatDate(d0, CFG.TZ, 'yyyy-MM-dd') : String(d0).trim();
+      if(dstr !== date) kept.push(data[i]);
+    }
+    var rowsN = 0, total = 0;
+    fields.forEach(function(f){
+      var name = String(f.name || '').trim(); if(!name) return;
+      var funes = Math.max(0, Math.round(Number(f.funes) || 0));
+      kept.push([date, name, funes, now]);
+      rowsN++; total += funes;
+    });
+    sh.clearContents();
+    sh.getRange(1, 1, kept.length, HEAD.length).setValues(kept.map(function(r){
+      var a = r.slice(0, HEAD.length); while(a.length < HEAD.length) a.push(''); return a;
+    }));
+    return { ok:true, saved: rowsN, date: date, total: total };
+  } finally { try{ lock.releaseLock(); }catch(e){} }
+}
+
+// ============================================================
+// 🔍 進捗差分タブ用：発注書「進捗」シートを取引先ごとに合算して返す（読み取り専用）
+//   センター電子黒板のreadOrderProgressByClient_と同じ考え方：
+//   ①先頭15行・先頭3列のどこかに西暦(2000〜2100)がある行＝取引先名の行（custRow）
+//   ②その1つ下の行＝見出しに「荷造数」を含む列を探す（subRow）
+//   ③本日の行は他の進捗シート読み取り関数と同じ月日一致方式（findRowByDate_）で探す
+//   ④「荷造数」列の1列左にある取引先名（空欄は直前の名前を引き継ぐ＝結合セル運用のため）で本日ぶんを合算
+//   列は固定しない・発注書スプレッドシートへは一切書き込まない。
+// ============================================================
+function readOrderProgressByClient_(dateParam){
+  var out = {};
+  var sh = openOrderSheetReadOnly_(CFG.ORDER_PROGRESS_SHEET);
+  if(!sh) return out;
+  var v = sh.getDataRange().getValues();
+
+  var custRow = -1;
+  for(var r = 0; r < Math.min(v.length, 15) && custRow < 0; r++){
+    for(var c = 0; c < 3; c++){ var y = Number(v[r][c]); if(y >= 2000 && y <= 2100){ custRow = r; break; } }
+  }
+  if(custRow < 0) return out;
+  var subRow = custRow + 1;
+  if(subRow >= v.length) return out;
+
+  var meta = detectDayColAndHeaderRows_(v);
+  var todayRow = findRowByDate_(v, meta.dayCol, dateParam);
+  if(todayRow < 0) return out;
+
+  var lastName = '';
+  var width = v[subRow] ? v[subRow].length : 0;
+  for(var c2 = 1; c2 < width; c2++){
+    var head = normText_(v[subRow][c2]);
+    if(head.indexOf('荷造数') < 0) continue;
+    var nm = normText_(v[custRow][c2 - 1]);
+    if(nm) lastName = nm;
+    var name = lastName;
+    if(!name) continue;
+    var raw = v[todayRow][c2];
+    var n = (typeof raw === 'number') ? raw : Number(String(raw || '').replace(/[^0-9.\-]/g, ''));
+    if(!(n > 0)) continue;
+    out[name] = (out[name] || 0) + n;
+  }
+  return out;
+}
+function getProgressByClient_(params){
+  params = params || {};
+  return {
+    sheet: CFG.ORDER_PROGRESS_SHEET,
+    date: params.date || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd'),
+    byClient: readOrderProgressByClient_(params.date)
+  };
+}
+// 🔍 診断用：進捗差分の取引先ごと集計がずれる原因調査（本番運用には使わない）
+function debugProgress_(params){
+  params = params || {};
+  var sh = openOrderSheetReadOnly_(CFG.ORDER_PROGRESS_SHEET);
+  if(!sh) return { error: 'シート「' + CFG.ORDER_PROGRESS_SHEET + '」が見つかりません' };
+  var v = sh.getDataRange().getValues();
+  var custRow = -1;
+  for(var r = 0; r < Math.min(v.length, 15) && custRow < 0; r++){
+    for(var c = 0; c < 3; c++){ var y = Number(v[r][c]); if(y >= 2000 && y <= 2100){ custRow = r; break; } }
+  }
+  var subRow = custRow >= 0 ? custRow + 1 : -1;
+  var meta = detectDayColAndHeaderRows_(v);
+  var todayRow = findRowByDate_(v, meta.dayCol, params.date);
+  var raw = [];
+  if(subRow >= 0 && v[subRow]){
+    var lastName = '';
+    for(var c2 = 1; c2 < Math.min(v[subRow].length, 40); c2++){
+      var nm = normText_(v[custRow][c2 - 1]); if(nm) lastName = nm;
+      raw.push({ c: c2, custCell: v[custRow][c2 - 1], custCarried: lastName, subHead: v[subRow][c2], todayVal: todayRow >= 0 ? v[todayRow][c2] : null });
+    }
+  }
+  return { custRow: custRow, subRow: subRow, dayCol: meta.dayCol, todayRow: todayRow, byClient: readOrderProgressByClient_(params.date), rawFirst40Cols: raw };
 }
 
 // ============================================================

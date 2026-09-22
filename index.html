@@ -16,15 +16,21 @@
   header h1{ font-size:19px; margin:0; font-weight:800; color:var(--blue-deep); }
   header .clock{ font-size:13px; color:var(--muted); font-weight:700; }
   header .status{ margin-left:auto; font-size:12px; font-weight:700; color:var(--muted); }
-  nav.tabs{ display:flex; gap:8px; padding:10px 20px 0; background:var(--surface-1); border-bottom:1px solid var(--border); }
-  nav.tabs button{ appearance:none; cursor:pointer; font-family:inherit; font-size:15px; font-weight:800; border:none; background:transparent; color:var(--text-secondary); padding:10px 18px; border-bottom:3px solid transparent; }
+  nav.tabs{ display:flex; gap:4px; padding:10px 20px 0; background:var(--surface-1); border-bottom:1px solid var(--border); overflow-x:auto; -webkit-overflow-scrolling:touch; }
+  nav.tabs button{ appearance:none; cursor:pointer; font-family:inherit; font-size:14px; font-weight:800; border:none; background:transparent; color:var(--text-secondary); padding:10px 14px; border-bottom:3px solid transparent; flex:0 0 auto; white-space:nowrap; }
   nav.tabs button.sel{ color:var(--blue-deep); border-bottom-color:var(--blue-deep); }
   .view{ display:none; padding:18px 22px 40px; max-width:1100px; margin:0 auto; }
   .view.show{ display:block; }
 
+  /* ===== 大画面モード（舟数モニター用。ヘッダー・タブを隠して数字だけ大きく出す） ===== */
+  #fn-kiosk-exit{ display:none; position:fixed; right:14px; top:12px; z-index:9999; appearance:none; cursor:pointer; font-family:inherit; font-size:14px; font-weight:800; border:2px solid var(--blue-deep); background:#fff; color:var(--blue-deep); padding:6px 14px; border-radius:18px; }
+  body.kiosk header, body.kiosk nav.tabs{ display:none !important; }
+  body.kiosk #fn-kiosk-exit{ display:block; }
+  body.kiosk .view{ max-width:none; }
+
   /* ===== 本日進捗タブ（センター電子黒板のカード/予測ストリップ構成に合わせる） ===== */
   .card{ background:var(--surface-1); border:1px solid var(--border); border-radius:14px; padding:16px 18px; margin-bottom:16px; }
-  .card > h3{ margin:0 0 12px; font-size:15px; font-weight:800; color:var(--text-primary); display:flex; align-items:center; gap:8px; }
+  .card > h3{ margin:0 0 12px; font-size:15px; font-weight:800; color:var(--text-primary); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .card > h3 .tag{ font-size:11px; font-weight:700; color:var(--muted); background:var(--surface-0); padding:2px 9px; border-radius:10px; }
   .card > .stat-row{ margin-bottom:0; }
   .card .nz-qty-bar{ background:var(--surface-0); margin:14px 0 0; }
@@ -143,27 +149,84 @@
   .haichi-skill-btn.v-warn{ background:#fff6e6; border-color:var(--amber); color:var(--amber); }
   .haichi-skill-btn.v-bad{ background:var(--red); border-color:var(--red); color:#fff; }
 
+  /* ===== 圃場（畑）タブ（センター電子黒板の簡易版。生産DX連携が無いため手入力のみ） ===== */
+  .hojo-card{ background:var(--surface-1); border:1px solid var(--border); border-radius:14px; padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
+  .hojo-card .top{ display:flex; align-items:center; gap:10px; }
+  .hojo-card .nm{ font-size:16px; font-weight:800; color:var(--text-primary); word-break:break-all; }
+  .hojo-card .del{ margin-left:auto; appearance:none; cursor:pointer; border:none; background:transparent; color:var(--muted); font-size:18px; line-height:1; padding:2px 4px; }
+  .hojo-card .del:hover{ color:var(--red); }
+  .hojo-card .fnrow{ display:flex; align-items:center; gap:10px; }
+  .hojo-card .fval{ font-size:34px; font-weight:800; color:var(--blue-deep); font-variant-numeric:tabular-nums; }
+  .hojo-card .fnrow .u{ font-size:13px; font-weight:700; color:var(--text-secondary); }
+  .hojo-card .fedit{ width:64px; font-family:inherit; font-size:17px; font-weight:800; text-align:right; padding:5px 7px; border:1px solid var(--grid); border-radius:7px; margin-left:auto; }
+  .hojo-card .btns{ display:flex; gap:8px; }
+  .hojo-card .pbtn{ appearance:none; cursor:pointer; font-family:inherit; font-size:13px; font-weight:800; border:1.5px solid var(--blue); background:#fff; color:var(--blue-deep); padding:7px 14px; border-radius:16px; flex:1; }
+  .hojo-card .pbtn:active{ transform:scale(0.96); }
+  .hojo-card .pbtn.minus{ border-color:var(--grid); color:var(--text-secondary); flex:0 0 48px; }
+
+  /* ===== 進捗差分タブ ===== */
+  .sd-head, .sd-row{ display:grid; grid-template-columns:2fr 1fr 1fr 1fr; gap:8px; align-items:center; }
+  .sd-head{ font-size:11px; font-weight:800; color:var(--muted); padding:4px 12px; border-bottom:2px solid var(--grid); }
+  .sd-row{ background:var(--surface-1); border:1px solid var(--border); border-radius:10px; padding:9px 12px; margin-top:6px; font-size:14px; font-weight:700; color:var(--text-primary); }
+  .sd-row .r, .sd-head .r{ text-align:right; font-variant-numeric:tabular-nums; }
+
+  /* ===== 舟数モニター（もう1台の液晶用。圃場＋生産者の“いまの舟数”を遠くからでも読めるように） ===== */
+  .fn-wrap{ padding:6px 4px 10px; }
+  .fn-top{ display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  .fn-big{ border:3px solid var(--text-primary); border-radius:10px; overflow:hidden; }
+  .fn-big .fn-hd{ text-align:center; font-size:16px; font-weight:800; padding:6px 0; border-bottom:3px solid var(--text-primary); }
+  .fn-big .fn-num{ text-align:center; font-size:64px; font-weight:900; font-variant-numeric:tabular-nums; padding:14px 0; line-height:1; }
+  .fn-big.target .fn-hd{ background:#ffc000; } .fn-big.target .fn-num{ background:#ffe699; }
+  .fn-big.now    .fn-hd{ background:#ff7c80; } .fn-big.now    .fn-num{ background:#ffc7ce; }
+  .fn-mid{ display:flex; align-items:center; gap:14px; margin:16px 0 6px; }
+  .fn-mid .fn-bar{ flex:1; height:22px; background:var(--surface-0); border:2px solid var(--text-primary); border-radius:4px; overflow:hidden; }
+  .fn-mid .fn-bar i{ display:block; height:100%; width:0; background:var(--green); transition:width .4s ease; }
+  .fn-mid .fn-bar.over i{ background:var(--blue); }
+  .fn-mid .fn-rest{ font-size:20px; font-weight:900; font-variant-numeric:tabular-nums; color:var(--text-primary); white-space:nowrap; }
+  .fn-mid .fn-rest b{ font-size:30px; margin:0 4px; }
+  .fn-mid .fn-rest.done{ color:var(--green); }
+  .fn-calc{ display:flex; align-items:stretch; justify-content:center; gap:14px; margin-top:14px; flex-wrap:wrap; }
+  .fn-op{ display:flex; align-items:center; font-size:40px; font-weight:900; color:var(--text-primary); line-height:1; padding:0 2px; }
+  .fn-cell{ border:2px solid var(--text-primary); border-radius:8px; overflow:hidden; min-width:180px; flex:1; }
+  .fn-cell .ch{ font-size:14px; font-weight:800; text-align:center; padding:6px 12px; border-bottom:2px solid var(--text-primary); background:var(--surface-0); white-space:nowrap; }
+  .fn-cell .cv{ text-align:center; font-size:40px; font-weight:900; font-variant-numeric:tabular-nums; padding:10px 6px; background:var(--surface-1); }
+  .fn-cell .edit-mark{ display:block; font-size:11px; font-weight:800; color:var(--text-secondary); margin-top:-6px; padding-bottom:6px; text-align:center; background:var(--surface-1); }
+  .fn-foot{ display:flex; align-items:center; gap:14px; margin-top:18px; font-size:12px; color:var(--muted); font-weight:700; flex-wrap:wrap; }
+  .fn-foot .fn-status{ margin-left:auto; }
+  body.kiosk .fn-big .fn-num{ font-size:130px; }
+  body.kiosk .fn-big .fn-hd{ font-size:30px; }
+  body.kiosk .fn-cell .cv{ font-size:56px; }
+  body.kiosk .fn-wrap{ padding:24px 24px; }
+
   @media (max-width:760px){
     .view{ padding:14px; }
     .seisan-list{ grid-template-columns:1fr; }
     .seisan-input{ width:100%; min-width:0; }
+    .fn-top{ grid-template-columns:1fr; gap:12px; }
+    .fn-big .fn-num{ font-size:48px; }
+    .sd-head, .sd-row{ grid-template-columns:1.6fr 1fr 1fr 1fr; font-size:12px; }
   }
 </style>
 </head>
 <body>
+<button id="fn-kiosk-exit" onclick="fnKiosk(false)">↩ 通常表示に戻す</button>
 <header>
   <h1>🌾 広島 電子黒板</h1>
   <div class="clock" id="clock"></div>
   <div class="status" id="status">起動中…</div>
 </header>
 <nav class="tabs">
-  <button class="tab sel" id="tab-progress" onclick="switchView('progress')">📋 本日荷造り</button>
-  <button class="tab" id="tab-seisan" onclick="switchView('seisan')">🧑‍🌾 生産者</button>
+  <button class="tab sel" id="tab-board" onclick="switchView('board')">📊 電子黒板</button>
+  <button class="tab" id="tab-nizukuri" onclick="switchView('nizukuri')">📋 本日荷造り</button>
+  <button class="tab" id="tab-skudiff" onclick="switchView('skudiff')">🔍 進捗差分</button>
   <button class="tab" id="tab-haichi" onclick="switchView('haichi')">🚧 配置図</button>
+  <button class="tab" id="tab-hojo" onclick="switchView('hojo')">🚜 圃場（畑）</button>
+  <button class="tab" id="tab-seisan" onclick="switchView('seisan')">🧑‍🌾 生産者</button>
+  <button class="tab" id="tab-funes" onclick="switchView('funes')">🚢 舟数モニター</button>
 </nav>
 
-<!-- ===== 本日進捗タブ ===== -->
-<div id="view-progress" class="view show">
+<!-- ===== 電子黒板タブ（ホーム画面：予測・予定／実績／資材アラート） ===== -->
+<div id="view-board" class="view show">
   <div class="card">
     <h3>📋 本日の予測・予定 <span class="tag">発注書・シフトより</span></h3>
     <div class="stat-row" id="main-stats"></div>
@@ -184,6 +247,17 @@
   </div>
 
   <div class="card">
+    <h3>🧰 資材の要確認</h3>
+    <div id="shizai-alerts-box" class="warn-box" style="display:none;"></div>
+    <div class="empty-note" id="shizai-alerts-empty">現在、しきい値を下回っている資材はありません（しきい値方式のみの簡易チェックです。定期チェック等は資材管理アプリでご確認ください）。</div>
+  </div>
+
+  <div class="foot-note">※ 数字は発注書スプレッドシート「進捗」「発注書」シートを読み取り専用で表示しているだけです。発注書スプレッドシートには一切書き込みません。</div>
+</div>
+
+<!-- ===== 本日荷造りタブ（注文一覧・状態管理・生産ログ） ===== -->
+<div id="view-nizukuri" class="view">
+  <div class="card">
     <h3>📦 本日の注文一覧 <span class="tag" id="nizukuri-date"></span></h3>
     <table class="progress-tbl nz-tbl" id="nizukuri-table">
       <thead><tr><th>状態</th><th>取引先</th><th>区分</th><th style="text-align:right;">入数</th><th style="text-align:right;">合計</th><th style="text-align:right;">累計</th><th style="text-align:right;">本日</th><th style="text-align:right;">のこり</th></tr></thead>
@@ -191,14 +265,18 @@
     </table>
     <div class="empty-note" id="nizukuri-empty" style="display:none;">本日の注文はまだ無いようです（発注書シートに本日の行が見つからない場合も含む）。</div>
   </div>
+  <div class="foot-note">状態のボタンを押すと「未確定→確定→作成済み」の順で切り替わります。累計＝今日より前に作った分の合計（自動・手入力で修正可）／本日＝今日作った分／のこり＝合計−累計−本日。</div>
+</div>
 
+<!-- ===== 進捗差分タブ ===== -->
+<div id="view-skudiff" class="view">
   <div class="card">
-    <h3>🧰 資材の要確認</h3>
-    <div id="shizai-alerts-box" class="warn-box" style="display:none;"></div>
-    <div class="empty-note" id="shizai-alerts-empty">現在、しきい値を下回っている資材はありません（しきい値方式のみの簡易チェックです。定期チェック等は資材管理アプリでご確認ください）。</div>
+    <h3>🔍 進捗差分（取引先ごと・c/s単位） <button class="nz-btn sub" style="margin-left:auto;" onclick="renderSkuDiff()">🔄 更新</button></h3>
+    <div class="empty-note" style="padding:0 0 12px;">発注書「進捗」シートの「荷造数」を取引先ごとに合算した値と、電子黒板の「本日作った分」（区分違いも取引先で合算）を突き合わせます。単位はどちらもc/s（ケース数）です。</div>
+    <div class="sd-head"><div>取引先</div><div class="r">黒板 本日作った(c/s)</div><div class="r">進捗シート 荷造数(c/s)</div><div class="r">差（黒板−進捗）</div></div>
+    <div id="skudiff-rows"></div>
+    <div class="empty-note" id="skudiff-empty">本日のデータがまだありません。</div>
   </div>
-
-  <div class="foot-note">※ 数字は発注書スプレッドシート「進捗」「発注書」シートを読み取り専用で表示しているだけです。発注書スプレッドシートには一切書き込みません。</div>
 </div>
 
 <!-- ===== 生産者タブ ===== -->
@@ -250,6 +328,46 @@
   <div class="haichi-skill-hint">保存先：【広島】電子黒板データ内「力量表」シート（このアプリから編集できます）。</div>
 </div>
 
+<!-- ===== 圃場（畑）タブ（手入力のみ。生産DX連携は広島には無いため簡易版） ===== -->
+<div id="view-hojo" class="view">
+  <div class="card">
+    <h3>🚜 圃場（畑）から持ってきた舟数 <span class="tag" id="hojo-date-label"></span></h3>
+    <div class="empty-note" id="hojo-status" style="padding:0 0 10px;"></div>
+    <div class="nz-qty-bar"><span class="nz-qty-lbl">本日合計：<b id="hojo-total">0</b> 舟</span></div>
+    <div class="haichi-add" style="margin-top:14px;">
+      <input id="hojo-newname" type="text" placeholder="圃場名を入れてEnter（例：185／田中さん）" onkeydown="if(event.key==='Enter')hojoAddField();">
+      <button class="haichi-btn sub" onclick="hojoAddField()">＋ 圃場を追加</button>
+    </div>
+    <div id="hojo-list" class="seisan-list" style="margin-top:14px;"></div>
+    <div class="empty-note" id="hojo-empty">まだ圃場が登録されていません。上の欄に圃場名を入れて追加してください。</div>
+  </div>
+  <div class="foot-note">保存先：【広島】電子黒板データ内「圃場舟数」シート。歩留まりの舟数（分母）は、ここでの本日合計と生産者タブの収穫舟数を使います（未入力の日は発注書シートの値を暫定的に使います）。</div>
+</div>
+
+<!-- ===== 舟数モニター（もう1台の液晶用。圃場＋生産者の“いまの舟数”を遠くからでも読めるように） ===== -->
+<div id="view-funes" class="view">
+  <div class="fn-wrap">
+    <div class="fn-top">
+      <div class="fn-big target"><div class="fn-hd">本日目標舟数</div><div class="fn-num"><span id="fn-target">--</span></div></div>
+      <div class="fn-big now"><div class="fn-hd">現在合計舟数</div><div class="fn-num"><span id="fn-now">--</span></div></div>
+    </div>
+    <div class="fn-mid">
+      <div class="fn-bar" id="fn-bar"><i></i></div>
+      <div class="fn-rest" id="fn-rest">のこり <b id="fn-rest-n">--</b> 舟</div>
+    </div>
+    <div class="fn-calc">
+      <div class="fn-cell hori"><div class="ch">🚜 圃場（畑）</div><div class="cv"><span id="fn-hori">0</span></div><span class="edit-mark">圃場タブから自動</span></div>
+      <div class="fn-op">＋</div>
+      <div class="fn-cell sei"><div class="ch">🧑‍🌾 生産者</div><div class="cv"><span id="fn-sei">0</span></div><span class="edit-mark">生産者タブから自動</span></div>
+    </div>
+    <div class="fn-foot">
+      <button class="haichi-btn sub" onclick="fnKiosk(true)">⛶ 大画面モード（ヘッダーとタブを隠す）</button>
+      <span>本日目標舟数＝本日の合計数量（本日荷造りの数量変更で上書き可）／現在合計舟数＝圃場＋生産者</span>
+      <span class="fn-status" id="fn-status"></span>
+    </div>
+  </div>
+</div>
+
 <script>
   /* ★デプロイ後、Apps ScriptのWebアプリURLをここに貼る */
   const GAS_URL = 'https://script.google.com/macros/s/AKfycbzvyoaRFRlG5LJ30FEoCjwUvhObb6p6jIULlgwWg6sdfTCBF54JbCR5n61Bve7Uktog/exec';
@@ -284,6 +402,9 @@
     document.getElementById('tab-' + name).classList.add('sel');
     if(name === 'seisan') seisanOnOpen();
     if(name === 'haichi') haichiOnOpen();
+    if(name === 'hojo') hojoOnOpen();
+    if(name === 'funes') fnOnOpen();
+    if(name === 'skudiff') renderSkuDiff();
   }
 
   function tickClock(){
@@ -293,7 +414,7 @@
   setInterval(tickClock, 1000*10); tickClock();
 
   /* ===== 本日荷造りタブ ===== */
-  var LAST_MAINSTATS = null, LAST_NIZUKURI = null, LAST_SHIFT = null;
+  var LAST_MAINSTATS = null, LAST_NIZUKURI = null, LAST_SHIFT = null, LAST_HOJO = null, LAST_SEISAN = null, LAST_PROGRESS_BY_CLIENT = {};
 
   // 予測・予定カード用の1枚を描画（実績カードと共通の見た目・補足説明文つき）
   function renderStatCardHtml_(c){
@@ -314,7 +435,7 @@
     // ① 収穫舟数・荷造り舟数（発注書シート・取引先名の行の集計列より。荷造り舟数と同じ検出方法＝
     //    同名候補が複数あっても最初の1件だけを採用するので一意に決まる。ユーザーへの警告表示は不要）
     var mstats = (LAST_MAINSTATS && !LAST_MAINSTATS.error && LAST_MAINSTATS.stats) ? LAST_MAINSTATS.stats : {};
-    if('収穫舟数' in mstats) cards.push({ lbl: '収穫舟数', val: (mstats['収穫舟数'] === '' ? '―' : mstats['収穫舟数']), u: '舟', sub: '発注書シートの本日行より' });
+    if('収穫舟数' in mstats) cards.push({ lbl: '収穫舟数', val: (mstats['収穫舟数'] === '' ? '―' : mstats['収穫舟数']), u: '舟', sub: '発注書シートの本日行より（参考値）' });
     if('荷造り舟数' in mstats) cards.push({ lbl: '荷造り舟数（予定）', val: (mstats['荷造り舟数'] === '' ? '―' : mstats['荷造り舟数']), u: '舟', sub: '発注書シートの本日行より' });
 
     // ② 荷造り予定㎏（本日の注文一覧の合計。発注書シートより）
@@ -425,7 +546,7 @@
     var inp = document.getElementById('nz-qty-input'); if(!inp) return;
     var v = Math.max(0, Math.round(Number(inp.value) || 0));
     LAST_NIZUKURI.targetOverride = v; LAST_NIZUKURI.targetFunes = v;
-    renderMainStats_(); nzRenderQtyBar_(LAST_NIZUKURI);
+    renderMainStats_(); nzRenderQtyBar_(LAST_NIZUKURI); fnRender();
     document.getElementById('nz-qty-edit').style.display = 'none';
     nzPushState_();
   }
@@ -433,14 +554,14 @@
     if(!LAST_NIZUKURI) return;
     LAST_NIZUKURI.targetOverride = null;
     LAST_NIZUKURI.targetFunes = (LAST_NIZUKURI.orders || []).reduce(function(s, o){ return s + Math.round(o.qty || 0); }, 0);
-    renderMainStats_(); nzRenderQtyBar_(LAST_NIZUKURI);
+    renderMainStats_(); nzRenderQtyBar_(LAST_NIZUKURI); fnRender();
     document.getElementById('nz-qty-edit').style.display = 'none';
     nzPushState_();
   }
   function renderJissekiStats_(data){
     var box = document.getElementById('jisseki-stats'); if(!box) return;
     var cards = [
-      { lbl:'歩留まり', val: (data.budomari != null ? (Math.round(data.budomari * 10) / 10) : '―'), u:'kg/舟', sub: '本日作った分の合計㎏ ÷ 舟数' },
+      { lbl:'歩留まり', val: (data.budomari != null ? (Math.round(data.budomari * 10) / 10) : '―'), u:'kg/舟', sub: '本日作った分の合計㎏ ÷ 舟数（圃場＋生産者の合計）' },
       { lbl:'加工率', val: (data.kakouRitsu != null ? (Math.round(data.kakouRitsu * 10) / 10) : '―'), u:'%', sub: '区分C・Sの割合（発注書「進捗」シートのCS率）' }
     ];
     box.innerHTML = cards.map(renderStatCardHtml_).join('');
@@ -467,9 +588,14 @@
       if(err || !data){ document.getElementById('status').textContent = '🟡 通信エラー：' + (err || ''); return; }
       if(data.mainStats) LAST_MAINSTATS = data.mainStats;
       if(data.shift)     LAST_SHIFT = data.shift;
+      if(data.hojo)      LAST_HOJO = data.hojo;
+      if(data.seisan)    LAST_SEISAN = data.seisan;
+      if(data.progressByClient) LAST_PROGRESS_BY_CLIENT = data.progressByClient.byClient || {};
       if(data.nizukuri)  renderNizukuri_(data.nizukuri);
       renderMainStats_();
       if(data.shizaiAlerts) renderShizaiAlerts_(data.shizaiAlerts);
+      renderSkuDiff();
+      fnRender();
       document.getElementById('status').textContent = '🟢 最終更新 ' + new Date().toLocaleTimeString('ja-JP');
     });
   }
@@ -891,6 +1017,186 @@
       });
     }, 700);
   }
+
+  /* ===== 進捗差分タブ ===== */
+  function computeClientDiff_(){
+    var madeByClient = {};
+    ((LAST_NIZUKURI && LAST_NIZUKURI.orders) || []).forEach(function(o){
+      if(o.unit === 'kg') return;   // 個人注文・その他サンプル(kg単位)は進捗シート側に対応する行が無いため対象外
+      var made = Number(o.madeToday) || 0;
+      if(!made) return;
+      madeByClient[o.cust] = (madeByClient[o.cust] || 0) + made;
+    });
+    var progress = LAST_PROGRESS_BY_CLIENT || {};
+    var names = {};
+    Object.keys(madeByClient).forEach(function(k){ names[k] = 1; });
+    Object.keys(progress).forEach(function(k){ names[k] = 1; });
+    return Object.keys(names).map(function(name){
+      var made = madeByClient[name] || 0;
+      var order = progress[name] || 0;
+      return { cust: name, made: made, order: order, diff: made - order };
+    }).sort(function(a, b){ return Math.abs(b.diff) - Math.abs(a.diff); });
+  }
+  function renderSkuDiff(){
+    var wrap = document.getElementById('skudiff-rows');
+    if(!wrap) return;   // タブ未描画でも落ちないように
+    var rows = computeClientDiff_();
+    var empty = document.getElementById('skudiff-empty');
+    if(!rows.length){ wrap.innerHTML = ''; if(empty) empty.style.display = 'block'; return; }
+    if(empty) empty.style.display = 'none';
+    wrap.innerHTML = rows.map(function(r){
+      var ok = Math.abs(r.diff) < 0.5;
+      var diffTxt = (r.diff > 0 ? '+' : '') + r.diff;
+      return '<div class="sd-row"><div>' + escHtml_(r.cust) + '</div><div class="r">' + r.made + '</div><div class="r">' + r.order + '</div><div class="r" style="color:' + (ok ? 'var(--green)' : 'var(--red)') + ';">' + (ok ? '一致' : diffTxt) + '</div></div>';
+    }).join('');
+  }
+
+  /* ===== 圃場（畑）タブ（生産者タブと同じ考え方。広島には生産DX連携が無いため手入力のみ） ===== */
+  var HOJO = { date:'', fields:[] };
+  function hojoLocalKey(){ return 'hb_hojo_' + HOJO.date; }
+  function hojoLoadLocal(){ try{ var o=JSON.parse(localStorage.getItem(hojoLocalKey())); if(o&&Array.isArray(o.fields)) HOJO.fields=o.fields; }catch(e){} }
+  function hojoSaveLocal(){ try{ localStorage.setItem(hojoLocalKey(), JSON.stringify({fields:HOJO.fields})); }catch(e){} }
+  function hojoSetStatus(txt,color){ var e=document.getElementById('hojo-status'); if(e){ e.textContent=txt; e.style.color=color||'var(--muted)'; } }
+
+  var hojoInited=false;
+  function hojoInit(){
+    if(hojoInited) return; hojoInited=true;
+    HOJO.date = todayStr_();
+    var lbl=document.getElementById('hojo-date-label'); if(lbl) lbl.textContent=HOJO.date;
+    hojoLoadLocal();
+    hojoLoadLive();
+  }
+  function hojoOnOpen(){ hojoInit(); hojoRender(); }
+
+  function hojoAddField(){
+    var inp=document.getElementById('hojo-newname'); if(!inp) return;
+    var nm=(inp.value||'').trim(); if(!nm) return;
+    if(HOJO.fields.some(function(f){ return f.name===nm; })){ hojoSetStatus('「'+nm+'」は既に登録済みです','#a76a00'); return; }
+    HOJO.fields.push({ name:nm, funes:0 });
+    inp.value=''; inp.focus();
+    hojoRender(); hojoPushSave();
+  }
+  function hojoBump(i, delta){
+    var f=HOJO.fields[i]; if(!f) return;
+    f.funes = Math.max(0, (Number(f.funes)||0) + delta);
+    hojoRender(); hojoPushSave();
+  }
+  function hojoSetVal(i, val){
+    var f=HOJO.fields[i]; if(!f) return;
+    f.funes = Math.max(0, Math.round(Number(val)||0));
+    hojoRenderTotals(); hojoPushSave();
+  }
+  function hojoDelField(i){
+    HOJO.fields.splice(i,1);
+    hojoRender(); hojoPushSave();
+  }
+  function hojoTotal(){ var s=0; HOJO.fields.forEach(function(f){ s+=Number(f.funes)||0; }); return s; }
+  function hojoRenderTotals(){
+    var e=document.getElementById('hojo-total'); if(e) e.textContent = hojoTotal();
+    fnRender();
+  }
+  function hojoRender(){
+    var wrap=document.getElementById('hojo-list'); if(!wrap) return;
+    wrap.innerHTML = HOJO.fields.map(function(f,i){
+      return '<div class="hojo-card">'
+        + '<div class="top"><span class="nm">'+escHtml_(f.name)+'</span><button class="del" onclick="hojoDelField('+i+')">✕</button></div>'
+        + '<div class="fnrow"><span class="fval">'+(Number(f.funes)||0)+'</span><span class="u">舟</span>'
+        + '<input class="fedit" type="number" min="0" step="1" value="'+(Number(f.funes)||0)+'" onchange="hojoSetVal('+i+',this.value)"></div>'
+        + '<div class="btns"><button class="pbtn minus" onclick="hojoBump('+i+',-1)">−1</button><button class="pbtn" onclick="hojoBump('+i+',1)">＋1舟</button><button class="pbtn" onclick="hojoBump('+i+',5)">＋5舟</button></div>'
+        + '</div>';
+    }).join('');
+    hojoRenderTotals();
+    var empty=document.getElementById('hojo-empty'); if(empty) empty.style.display = HOJO.fields.length ? 'none' : 'block';
+  }
+  var _hojoDirty=false;
+  function hojoApplyLive_(data){
+    if(!data || data.error || data.date!==HOJO.date) return false;
+    HOJO.fields = data.fields || [];
+    hojoSaveLocal(); hojoRender();
+    var t=new Date(); hojoSetStatus('🟢 保存済み '+('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2),'var(--green)');
+    return true;
+  }
+  function hojoLoadLive(){
+    if(!GAS_URL || GAS_URL.indexOf('http')!==0){ hojoSetStatus('ローカル保存のみ（GAS_URL未設定）','var(--muted)'); hojoRender(); return; }
+    hojoSetStatus('読み込み中…','var(--muted)');
+    gasGet_('hojoGet', { date: HOJO.date }, function(data, err){
+      if(err || !hojoApplyLive_(data)){
+        if(HOJO.fields && HOJO.fields.length){ hojoSetStatus('🟢 接続OK（ローカル入力分を保存中…）','var(--green)'); hojoRender(); hojoPushSave(); }
+        else { hojoSetStatus(err ? '🟡 通信失敗（ローカル表示）' : '🟢 保存先に接続OK', err?'#a76a00':'var(--green)'); hojoRender(); }
+      }
+    });
+  }
+  var hojoSaveTimer=null;
+  function hojoPushSave(){
+    hojoSaveLocal();
+    if(!GAS_URL || GAS_URL.indexOf('http')!==0){ hojoSetStatus('ローカル保存のみ（GAS_URL未設定）','var(--muted)'); return; }
+    if(hojoSaveTimer) clearTimeout(hojoSaveTimer);
+    _hojoDirty=true;
+    hojoSetStatus('保存中…','var(--muted)');
+    hojoSaveTimer=setTimeout(function(){
+      gasPost_('hojoSave', { date:HOJO.date, fields:HOJO.fields }, function(d, err){
+        if(d && d.ok){ _hojoDirty=false; var t=new Date(); hojoSetStatus('🟢 保存済み '+('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2),'var(--green)'); }
+        else { hojoSetStatus('🟡 保存エラー（ローカルには保持）','#a76a00'); }
+      });
+    }, 700);
+  }
+
+  /* ===== 舟数モニター（もう1台の液晶用。センター電子黒板の簡易版＝前日ストック等の手入力欄は省略） =====
+     目標舟数＝本日荷造りの合計数量（数量変更で上書き可）／現在合計舟数＝圃場（畑）＋生産者（自動）。
+     bundleの30秒ポーリング（loadBundle_）で LAST_HOJO/LAST_SEISAN/LAST_NIZUKURI が更新されるたびに再計算する。 */
+  function fnNum_(n){ return Number(n||0).toLocaleString('ja-JP'); }
+  function fnRender(){
+    if(!document.getElementById('fn-now')) return;
+    var hori = (LAST_HOJO && LAST_HOJO.total) ? Number(LAST_HOJO.total) : 0;
+    var sei  = (LAST_SEISAN && LAST_SEISAN.totalFunes) ? Number(LAST_SEISAN.totalFunes) : 0;
+    var now  = hori + sei;
+    var tgtSet = !!(LAST_NIZUKURI && !LAST_NIZUKURI.error && LAST_NIZUKURI.targetFunes != null);
+    var tgt = tgtSet ? Number(LAST_NIZUKURI.targetFunes) : 0;
+
+    document.getElementById('fn-now').textContent = fnNum_(now);
+    document.getElementById('fn-target').textContent = tgtSet ? fnNum_(tgt) : '--';
+    document.getElementById('fn-hori').textContent = fnNum_(hori);
+    document.getElementById('fn-sei').textContent = fnNum_(sei);
+
+    var bar = document.getElementById('fn-bar');
+    var rest = document.getElementById('fn-rest');
+    if(!tgtSet || tgt <= 0){
+      if(bar){ bar.querySelector('i').style.width='0%'; bar.classList.remove('over'); }
+      if(rest){ rest.classList.remove('done'); rest.innerHTML='のこり <b>--</b> 舟'; }
+    } else {
+      var pct = Math.max(0, Math.min(100, now / tgt * 100));
+      if(bar){ bar.querySelector('i').style.width = pct + '%'; bar.classList.toggle('over', now >= tgt); }
+      var diff = tgt - now;
+      if(rest){
+        rest.classList.toggle('done', diff <= 0);
+        rest.innerHTML = (diff > 0) ? ('のこり <b>' + fnNum_(diff) + '</b> 舟') : ('✅ 目標達成' + (diff < 0 ? '（＋' + fnNum_(-diff) + ' 舟）' : ''));
+      }
+    }
+    var st = document.getElementById('fn-status');
+    if(st){ var t=new Date(); st.textContent = '更新 ' + ('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2); }
+  }
+  function fnOnOpen(){
+    hojoInit();     // 圃場・生産者は開いていなくても読み込む（現在合計舟数の計算に必要）
+    seisanInit();
+    fnRender();
+  }
+  // 大画面モード＝ヘッダー・タブを隠して舟数だけを大きく出す（もう1台の液晶用）
+  function fnKiosk(on){
+    document.body.classList.toggle('kiosk', !!on);
+    try{ localStorage.setItem('fn_kiosk', on ? '1' : ''); }catch(e){}
+    if(on) switchView('funes');
+  }
+  (function(){
+    try{ if(localStorage.getItem('fn_kiosk')==='1') fnKiosk(true); }catch(e){}
+    // 「index.html#funes」で舟数モニタータブを開いた状態に、「#funes-kiosk」で大画面モードまで自動で開く
+    var h = String(location.hash||'').replace('#','');
+    if(h){
+      var kiosk = /-kiosk$/.test(h);
+      var v = h.replace(/-kiosk$/,'');
+      if(v && document.getElementById('view-' + v)) switchView(v);
+      if(kiosk) fnKiosk(true);
+    }
+  })();
 </script>
 </body>
 </html>
