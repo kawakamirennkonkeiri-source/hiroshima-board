@@ -978,11 +978,12 @@ function hojoSave_(body){
 
 // ============================================================
 // 🔍 進捗差分タブ用：発注書「進捗」シートを取引先ごとに合算して返す（読み取り専用）
-//   センター電子黒板のreadOrderProgressByClient_と同じ考え方：
 //   ①先頭15行・先頭3列のどこかに西暦(2000〜2100)がある行＝取引先名の行（custRow）
 //   ②その1つ下の行＝見出しに「荷造数」を含む列を探す（subRow）
 //   ③本日の行は他の進捗シート読み取り関数と同じ月日一致方式（findRowByDate_）で探す
-//   ④「荷造数」列の1列左にある取引先名（空欄は直前の名前を引き継ぐ＝結合セル運用のため）で本日ぶんを合算
+//   ④取引先名は「荷造数」列と同じ列に入っている（センターの発注書は1列左だが、広島の進捗シートは
+//     ?type=debugProgress の実データで確認した通り同じ列＝取引先ブロックの最初の列に名前がある）。
+//     空欄は直前の名前を引き継ぐ（結合セル運用のため）。custRowの西暦セル自体は名前として扱わない。
 //   列は固定しない・発注書スプレッドシートへは一切書き込まない。
 // ============================================================
 function readOrderProgressByClient_(dateParam){
@@ -1006,10 +1007,11 @@ function readOrderProgressByClient_(dateParam){
   var lastName = '';
   var width = v[subRow] ? v[subRow].length : 0;
   for(var c2 = 1; c2 < width; c2++){
+    var nm = normText_(v[custRow][c2]);
+    var nmYear = Number(nm);
+    if(nm && !(nmYear >= 2000 && nmYear <= 2100)) lastName = nm;
     var head = normText_(v[subRow][c2]);
     if(head.indexOf('荷造数') < 0) continue;
-    var nm = normText_(v[custRow][c2 - 1]);
-    if(nm) lastName = nm;
     var name = lastName;
     if(!name) continue;
     var raw = v[todayRow][c2];
@@ -1044,8 +1046,10 @@ function debugProgress_(params){
   if(subRow >= 0 && v[subRow]){
     var lastName = '';
     for(var c2 = 1; c2 < Math.min(v[subRow].length, 40); c2++){
-      var nm = normText_(v[custRow][c2 - 1]); if(nm) lastName = nm;
-      raw.push({ c: c2, custCell: v[custRow][c2 - 1], custCarried: lastName, subHead: v[subRow][c2], todayVal: todayRow >= 0 ? v[todayRow][c2] : null });
+      var nm = normText_(v[custRow][c2]);
+      var nmYear = Number(nm);
+      if(nm && !(nmYear >= 2000 && nmYear <= 2100)) lastName = nm;
+      raw.push({ c: c2, custCell: v[custRow][c2], custCarried: lastName, subHead: v[subRow][c2], todayVal: todayRow >= 0 ? v[todayRow][c2] : null });
     }
   }
   return { custRow: custRow, subRow: subRow, dayCol: meta.dayCol, todayRow: todayRow, byClient: readOrderProgressByClient_(params.date), rawFirst40Cols: raw };
