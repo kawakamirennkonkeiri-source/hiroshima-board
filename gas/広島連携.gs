@@ -137,6 +137,7 @@ function doPost(e){
     else if(action === 'haichiSave')       out = haichiSave_(body);   // ⑥ 配置図：本日の配置・欠勤上書き・応援追加
     else if(action === 'haichiSkillSave')  out = haichiSkillSave_(body); // ⑥ 力量表：○/△/×をアプリから編集
     else if(action === 'haichiPrioSave')   out = haichiPrioSave_(body); // ⑨ 配置優先：優先番号をアプリから編集
+    else if(action === 'haichiZoneCfgSave') out = haichiZoneCfgSave_(body); // ⑩ ゾーン設定：定員をアプリから編集
     else if(action === 'nizukuriStateSave') out = nzStateSave_(body);  // ⑦ 状態(確定/作成済み)・総舟数の当日上書き
     else if(action === 'nizukuriMadeSave')  out = nzMadeSave_(body);   // ⑦ 本日作った分（生産ログupsert）
     else if(action === 'hojoSave')          out = hojoSave_(body);    // ⑧ 圃場（畑）から持ってきた舟数
@@ -1526,7 +1527,7 @@ function haichiReadPrio_(rosterNames){
   return prio;
 }
 
-// ---- 配置設定（ゾーンID・表示名・定員。定員は曽我さんがスプレッドシートを直接編集して調整） ----
+// ---- 配置設定（ゾーンID・表示名・定員。スプレッドシート直接編集に加えて、アプリの「⚙ ゾーン設定」からも編集可能） ----
 function haichiCfgSheet_(){
   var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
   var name = CFG.HAICHI_CFG_SHEET || '配置設定';
@@ -1553,6 +1554,27 @@ function haichiReadZoneCfg_(){
   return zones.map(function(z){
     return { id: z.id, label: z.label, capacity: (z.id in capById) ? capById[z.id] : 2 };
   });
+}
+// ⑩ アプリの「⚙ ゾーン設定」から定員を編集して保存する（1ゾーンの定員だけ更新。行が無ければ追加）
+function haichiZoneCfgSave_(body){
+  body = body || {};
+  var lock = LockService.getScriptLock();
+  try{ lock.waitLock(15000); }catch(e){ return { ok:false, error:'busy（他の保存処理中）' }; }
+  try{
+    var zoneId = String(body.zoneId || ''); if(!zoneId) return { ok:false, error:'zoneIdが空です' };
+    var capacity = Math.max(0, Math.round(Number(body.capacity) || 0));
+    var zones = CFG.HAICHI_ZONES || [];
+    var zone = null;
+    for(var i = 0; i < zones.length; i++){ if(zones[i].id === zoneId){ zone = zones[i]; break; } }
+    if(!zone) return { ok:false, error:'不明なゾーンID: ' + zoneId };
+    var sh = haichiCfgSheet_();
+    var v = sh.getDataRange().getValues();
+    for(var r = 1; r < v.length; r++){
+      if(normText_(v[r][0]) === zoneId){ sh.getRange(r + 1, 3).setValue(capacity); return { ok:true, capacity: capacity }; }
+    }
+    sh.appendRow([zone.id, zone.label, capacity]);
+    return { ok:true, capacity: capacity };
+  } finally { try{ lock.releaseLock(); }catch(e){} }
 }
 
 // ---- 配置図状態（本日の配置・欠勤上書き・応援追加。生産者記録と同じ「その日付だけ入れ替え」方式） ----
