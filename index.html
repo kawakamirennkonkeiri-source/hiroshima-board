@@ -43,6 +43,57 @@
   .warn-box{ background:#fff6e6; border:1px solid #f0d38a; color:var(--amber); font-size:13px; font-weight:700; padding:10px 14px; border-radius:10px; margin-bottom:14px; }
   .match-msg{ background:#e7f6e7; border:1.5px solid #7ecb7e; color:#1c7d1c; font-size:15px; font-weight:800; text-align:center; padding:14px; border-radius:12px; margin-bottom:14px; line-height:1.6; }
   .foot-note{ font-size:11px; color:var(--muted); margin-top:6px; line-height:1.7; }
+
+  /* ===== 一致確認タイル（ホーム画面。センター電子黒板の match-tile 相当） ===== */
+  .stat-card.match-card{ display:flex; flex-direction:column; }
+  .stat-card.match-card .mm{ flex:1; display:flex; align-items:center; justify-content:center; text-align:center; margin-top:8px; font-size:17px; font-weight:800; padding:12px 10px; border-radius:10px; line-height:1.45; background:var(--surface-0); color:var(--text-secondary); }
+  .stat-card.match-card .mm.ok{ background:#e7f6e7; color:#1c7d1c; }
+  .stat-card.match-card .mm.bad{ background:#fdecea; color:#7a1f1f; }
+
+  /* ===== 📢 お知らせ（Slack連携） ===== */
+  .news-item{ padding:9px 0; border-bottom:1px dashed var(--grid); }
+  .news-item:last-child{ border-bottom:none; }
+  .news-item .meta{ display:flex; align-items:center; gap:6px; margin-bottom:3px; flex-wrap:wrap; }
+  .news-item .from{ font-size:11px; font-weight:800; color:#fff; background:#6b4ec9; padding:1px 7px; border-radius:10px; }
+  .news-item .date{ font-size:11px; color:var(--muted); font-weight:700; }
+  .news-item .new-badge{ font-size:10px; font-weight:800; color:#fff; background:var(--red); padding:1px 6px; border-radius:8px; letter-spacing:.05em; animation:newblink 1.4s ease-in-out infinite; }
+  @keyframes newblink{ 0%,100%{opacity:1;} 50%{opacity:.35;} }
+  .news-item .nz-badge{ font-size:10px; font-weight:800; color:#fff; background:#a4632a; padding:1px 6px; border-radius:8px; }
+  .news-item .body{ font-size:13px; font-weight:600; color:var(--text-primary); line-height:1.5; white-space:pre-wrap; }
+  .news-empty{ font-size:12px; color:var(--muted); padding:8px 0; line-height:1.7; }
+  .news-more{ margin-top:10px; text-align:center; }
+  .news-more button{ background:var(--surface-0); border:1px solid var(--border); border-radius:8px; padding:6px 12px; font-size:12px; font-weight:700; color:var(--blue-deep); cursor:pointer; font-family:inherit; }
+  .news-more button:hover{ background:#eef3fb; }
+  .md-modal{ position:fixed; inset:0; background:rgba(0,0,0,.45); display:none; align-items:center; justify-content:center; z-index:9999; }
+  .md-modal.show{ display:flex; }
+  .md-modal .box{ background:var(--surface-1); width:min(560px,92vw); max-height:82vh; overflow:auto; border-radius:14px; padding:18px 22px; box-shadow:0 20px 60px rgba(0,0,0,.3); }
+  .md-modal h4{ margin:0 0 12px; font-size:18px; color:var(--text-primary); }
+  .md-modal .close{ float:right; border:none; background:none; font-size:24px; line-height:1; cursor:pointer; color:var(--muted); }
+  /* 本日荷造りタブ：【荷造り】タグ付きお知らせの注意文 */
+  #nz-notice:empty{ display:none; }
+  .nz-alert{ display:flex; gap:10px; align-items:flex-start; background:#fff5ec; border:1px solid #f0c89a; border-left:5px solid #e07b1a; border-radius:10px; padding:10px 14px; margin-bottom:8px; cursor:pointer; }
+  .nz-alert:hover{ background:#ffeede; }
+  .nz-alert .ic{ font-size:18px; line-height:1.4; }
+  .nz-alert .tx{ font-size:13px; font-weight:700; color:#8a4b00; line-height:1.5; }
+  .nz-alert .who{ font-weight:800; }
+
+  /* ===== ✅ TODOリスト ===== */
+  .todo-tabs{ display:flex; gap:6px; margin-bottom:8px; }
+  .todo-tabs span{ font-size:11px; padding:3px 10px; border-radius:12px; background:var(--surface-0); color:var(--text-secondary); font-weight:700; }
+  .todo-tabs span.active{ background:var(--blue); color:#fff; }
+  .todo-item{ display:flex; align-items:center; gap:8px; font-size:14px; padding:7px 0; cursor:pointer; user-select:none; border-bottom:1px dashed var(--grid); }
+  .todo-item:last-child{ border-bottom:none; }
+  .todo-item .box{ width:18px; height:18px; border:2px solid var(--muted); border-radius:4px; flex:none; position:relative; }
+  .todo-item.done .box{ background:var(--green); border-color:var(--green); }
+  .todo-item.done .box::after{ content:'✓'; color:#fff; font-size:13px; font-weight:900; position:absolute; left:2px; top:-2px; }
+  .todo-item.done span.todo-task{ text-decoration:line-through; color:var(--muted); }
+  .todo-item span.todo-task{ flex:1 1 auto; font-weight:700; }
+  .todo-item span.todo-freq{ font-size:10px; color:var(--text-secondary); background:var(--surface-0); border-radius:8px; padding:1px 7px; flex:none; }
+  .todo-empty{ font-size:12px; color:var(--muted); line-height:1.7; }
+
+  /* ホーム画面の2カラム（お知らせ｜TODO）。狭い画面では自動で縦積み */
+  .board-cols{ display:flex; gap:16px; flex-wrap:wrap; align-items:flex-start; }
+  .board-cols > .card{ flex:1 1 320px; margin-bottom:0; }
   .section-ttl{ font-size:15px; font-weight:800; color:var(--text-primary); margin:22px 0 8px; }
   table.progress-tbl{ width:100%; border-collapse:collapse; background:var(--surface-1); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
   table.progress-tbl th, table.progress-tbl td{ padding:10px 12px; border-bottom:1px solid var(--border); font-size:14px; text-align:left; }
@@ -313,6 +364,18 @@
     <div class="stat-row" id="jisseki-stats"></div>
   </div>
 
+  <div class="board-cols" style="margin-bottom:16px;">
+    <div class="card">
+      <h3>📢 お知らせ <span class="tag">Slack連携</span></h3>
+      <div id="md-news"><div class="news-empty">読み込み中…</div></div>
+    </div>
+    <div class="card">
+      <h3>✅ TODO <span class="tag">広島TODOマスタより</span></h3>
+      <div class="todo-tabs"><span class="active">本日</span></div>
+      <div id="todo-list"><div class="todo-empty">読み込み中…</div></div>
+    </div>
+  </div>
+
   <div class="card">
     <h3>🧰 資材の要確認</h3>
     <div id="shizai-alerts-box" class="warn-box" style="display:none;"></div>
@@ -322,10 +385,21 @@
   <div class="foot-note">※ 数字は発注書スプレッドシート「進捗」「発注書」シートを読み取り専用で表示しているだけです。発注書スプレッドシートには一切書き込みません。</div>
 </div>
 
+<!-- ===== お知らせ履歴モーダル（カードの「過去のお知らせを見る」から開く） ===== -->
+<div id="md-modal" class="md-modal" onclick="if(event.target===this)mdCloseHistory()">
+  <div class="box">
+    <button class="close" onclick="mdCloseHistory()" aria-label="閉じる">×</button>
+    <h4>📢 お知らせ 一覧</h4>
+    <div id="md-modal-list"></div>
+  </div>
+</div>
+
 <!-- ===== 本日荷造りタブ（注文一覧・状態管理・生産ログ。センター電子黒板と同じカード行デザイン） ===== -->
 <div id="view-nizukuri" class="view">
   <div class="card">
     <h3>📦 本日荷造り <span class="tag" id="nizukuri-date"></span></h3>
+    <!-- Slackお知らせのうち先頭に【荷造り】が付いた投稿だけ、ここに短い注意文を出す（クリックで全文） -->
+    <div id="nz-notice"></div>
     <div class="nz-daynav">
       <button class="nz-btn sub" onclick="nzExtendDay()">＋1日</button>
       <button class="nz-btn sub" onclick="nzResetDays()">3日に戻す</button>
@@ -899,7 +973,36 @@
       { lbl:'歩留まり', val: (data.budomari != null ? (Math.round(data.budomari * 10) / 10) : '―'), u:'kg/舟', sub: '本日作った分の合計㎏ ÷ 舟数（圃場＋生産者の合計）' },
       { lbl:'加工率', val: (data.kakouRitsu != null ? (Math.round(data.kakouRitsu * 10) / 10) : '―'), u:'%', sub: '区分C・Sの割合（発注書「進捗」シートのCS率）' }
     ];
-    box.innerHTML = cards.map(renderStatCardHtml_).join('');
+    // 発注書「進捗」との一致確認タイル（センター電子黒板と同じく、ホーム画面にも常時出す）。
+    // 中身は🔍進捗差分タブと同じ computeClientDiff_() の結果＝2画面で判定がズレない。
+    box.innerHTML = cards.map(renderStatCardHtml_).join('') +
+      '<div class="stat-card match-card"><div class="lbl">発注書「進捗」との一致確認</div>' +
+      '<div class="mm" id="j-match-msg">確認中…</div></div>';
+    renderMatchTile_();
+  }
+
+  // ホーム画面の一致確認タイル。🔍進捗差分タブの表示（#skudiff-match）と同じ条件で判定する：
+  //   ・何か1件でも動きがある（0対0＝まだ何も入力していないだけ、を「一致」と祝わないためのガード）
+  //   ・かつ全取引先の差が0.5未満
+  function renderMatchTile_(){
+    var el = document.getElementById('j-match-msg');
+    if(!el) return;
+    var rows = computeClientDiff_();
+    var hasActivity = rows.some(function(r){ return r.made > 0 || r.order > 0; });
+    if(!rows.length || !hasActivity){
+      el.className = 'mm';
+      el.textContent = '本日のデータがまだありません';
+      return;
+    }
+    var ng = rows.filter(function(r){ return Math.abs(r.diff) >= 0.5; });
+    if(!ng.length){
+      el.className = 'mm ok';
+      el.innerHTML = '✅ 一致しました！<br>今日もお疲れ様でした';
+    }else{
+      el.className = 'mm bad';
+      var names = ng.slice(0, 3).map(function(r){ return escHtml_(r.cust) + (r.diff > 0 ? '+' : '') + r.diff; });
+      el.innerHTML = '⚠️ ' + names.join('・') + (ng.length > 3 ? ' 他' + (ng.length - 3) + '件' : '') + '<br>要確認';
+    }
   }
 
   // ④ 資材の要確認アラート（しきい値方式のみの簡易版）
@@ -917,10 +1020,58 @@
     }).join('<br>');
   }
 
+  /* ===== ⑭ 起動を速くする仕掛け（2026-09-24。「開くのが遅い」対策） =====
+     これまでは画面を開いてから bundle（実測16〜17秒）が返るまで、ずっと「--」のままだった。
+     ① 前回受け取った bundle を localStorage に残しておき、開いた瞬間にそれで描画する（体感0秒）。
+     ② そのうえで GAS へ取りに行く。初回だけ maxAge を大きめ（600秒）にして、GAS側の
+        キャッシュがあればそのまま返してもらう＝作り直しを待たない（1.5〜2秒で本物に入れ替わる）。
+     ③ 以後の30秒ポーリングは既定の鮮度（60秒）で取りに行くので、数字は従来どおり最新に保たれる。 */
+  var BUNDLE_LS_KEY = 'hb_bundle_' + todayStr_();
+  function bundleSaveLocal_(d){
+    try{
+      // 重いもの（注文明細）は本日荷造りタブが別途取り直すので、ホーム表示に要るものだけ残す
+      localStorage.setItem(BUNDLE_LS_KEY, JSON.stringify({ at: Date.now(), d: d }));
+    }catch(e){}
+  }
+  function bundleLoadLocal_(){
+    try{
+      var o = JSON.parse(localStorage.getItem(BUNDLE_LS_KEY) || 'null');
+      if(!o || !o.d) return null;
+      if(Date.now() - Number(o.at || 0) > 12 * 60 * 60 * 1000) return null;   // 半日より古ければ捨てる
+      return o;
+    }catch(e){ return null; }
+  }
+  // 起動直後：保存しておいた前回の内容で先に描く（通信を待たない）
+  function bundlePaintFromLocal_(){
+    var o = bundleLoadLocal_();
+    if(!o) return false;
+    try{ applyBundle_(o.d); }catch(e){ return false; }
+    var st = document.getElementById('status');
+    if(st) st.textContent = '⏳ 前回の内容を表示中（最新を取得しています）…';
+    return true;
+  }
+
+  var _bundleFirstLoad = true;
   function loadBundle_(){
-    document.getElementById('status').textContent = '読み込み中…';
-    gasGet_('bundle', { date: todayStr_() }, function(data, err){
+    var st = document.getElementById('status');
+    if(st && !/前回の内容/.test(st.textContent || '')) st.textContent = '読み込み中…';
+    // 初回だけ「多少古くてもいいので今すぐ返して」＝GAS側で作り直しを待たない。
+    // 2回目以降（30秒ポーリング）は180秒。誰かが保存したらGAS側でキャッシュが捨てられるので、
+    // 入力内容は180秒を待たず次のポーリングで全PCへ反映される（この値が効くのは
+    // 「誰も何も触っていない時に、わざわざ作り直すか」だけ）。
+    var q = { date: todayStr_(), maxAge: (_bundleFirstLoad ? 600 : 180) };
+    _bundleFirstLoad = false;
+    gasGet_('bundle', q, function(data, err){
       if(err || !data){ document.getElementById('status').textContent = '🟡 通信エラー：' + (err || ''); return; }
+      applyBundle_(data);
+      bundleSaveLocal_(data);
+      var age = Number(data._ageSec || 0);
+      document.getElementById('status').textContent = '🟢 最終更新 ' + new Date().toLocaleTimeString('ja-JP')
+        + (age > 90 ? '（データは' + Math.round(age / 60) + '分前の内容）' : '');
+    });
+  }
+
+  function applyBundle_(data){
       if(data.mainStats) LAST_MAINSTATS = data.mainStats;
       if(data.shift)     LAST_SHIFT = data.shift;
       if(data.hojo)      LAST_HOJO = data.hojo;
@@ -936,20 +1087,162 @@
       // ⑦-b 他PCで「＋1日」「この日を表示」を押した結果（表示ウィンドウ）をこのPCへ同期。
       //   注文データ自体（重い）は本日荷造りタブを開いている時だけ別途nzLoadDaysNow_で取得する。
       if(data.nzView) nzApplyCloudView_(data.nzView);
+      if(data.todo) todoApply_(data.todo);   // ⑫ TODOリスト（他PCのチェックもここで同期）
       renderMainStats_();
       if(data.shizaiAlerts) renderShizaiAlerts_(data.shizaiAlerts);
       renderSkuDiff();
       fnRender();
-      document.getElementById('status').textContent = '🟢 最終更新 ' + new Date().toLocaleTimeString('ja-JP');
-    });
   }
   function todayStr_(){ var t=new Date(); return t.getFullYear()+'-'+String(t.getMonth()+1).padStart(2,'0')+'-'+String(t.getDate()).padStart(2,'0'); }
   function deviceLabel_(){ try{ return (navigator.platform||'PC')+'/'+(screen.width||'')+'x'+(screen.height||''); }catch(e){ return 'PC'; } }
   function escHtml_(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function escAttr_(s){ return escHtml_(s); }
 
+  bundlePaintFromLocal_();   // ⑭ まず前回の内容で即描画（通信を待たずに画面が出る）
   loadBundle_();
   setInterval(loadBundle_, 30000);
+
+  /* ===== ⑬ 📢 お知らせ（Slack連携・広島チャンネル。センター電子黒板のMD部お知らせと同じ形） =====
+     GAS `?type=news` が Slackの広島チャンネルの直近14日分を返す（GAS側で60秒キャッシュ）。
+     投稿の先頭に【荷造り】を付けると、本日荷造りタブにも短い注意文（#nz-notice）が出る。
+     スクリプトプロパティ（SLACK_BOT_TOKEN / SLACK_CHANNEL_ID）が未設定のあいだは
+     案内文を出すだけで、他の機能には一切影響しない。 */
+  var MD_NEWS = [];
+  var MD_NEWS_ERR = '';
+  function mdDate_(p){ return String(p).slice(5).replace('-', '/'); }   // 2026-09-24 → 09/24
+  function mdItemHtml_(n, today){
+    var isNew = (n.posted === today);
+    return '<div class="meta">' +
+        '<span class="from">' + escHtml_(n.from || 'お知らせ') + '</span>' +
+        '<span class="date">' + escHtml_(mdDate_(n.posted)) + (n.time ? (' ' + escHtml_(n.time)) : '') + '</span>' +
+        (n.nizukuri ? '<span class="nz-badge">📦荷造り</span>' : '') +
+        (isNew ? '<span class="new-badge">NEW</span>' : '') +
+      '</div>' +
+      '<div class="body">' + escHtml_(n.body) + '</div>';
+  }
+  function mdRenderNews_(){
+    var wrap = document.getElementById('md-news');
+    if(wrap){
+      var today = todayStr_();
+      if(!MD_NEWS.length){
+        var note;
+        if(!MD_NEWS_ERR){
+          note = '現在お知らせはありません';
+        }else if(MD_NEWS_ERR.indexOf('type を') >= 0){
+          // GASがまだ古いバージョン（?type=news を知らない）＝再デプロイ待ち
+          note = 'お知らせ機能は準備中です（GASの再デプロイ待ち）';
+        }else if(MD_NEWS_ERR.indexOf('SLACK_') >= 0){
+          note = 'Slack連携がまだ設定されていません（GASのスクリプトプロパティに SLACK_BOT_TOKEN / SLACK_CHANNEL_ID を登録してください）';
+        }else{
+          note = '現在お知らせを取得できません（' + escHtml_(MD_NEWS_ERR) + '）';
+        }
+        wrap.innerHTML = '<div class="news-empty">' + note + '</div>';
+      }else{
+        var html = MD_NEWS.slice(0, 6).map(function(n){ return '<div class="news-item">' + mdItemHtml_(n, today) + '</div>'; }).join('');
+        html += '<div class="news-more"><button onclick="mdOpenHistory()">🔍 過去のお知らせを見る（最大' + Math.min(MD_NEWS.length, 10) + '件）</button></div>';
+        wrap.innerHTML = html;
+      }
+    }
+    mdRenderNzNotice_();
+  }
+  function mdOpenHistory(){
+    var box = document.getElementById('md-modal-list');
+    if(box){
+      var today = todayStr_();
+      box.innerHTML = MD_NEWS.length
+        ? MD_NEWS.slice(0, 10).map(function(n){ return '<div class="news-item">' + mdItemHtml_(n, today) + '</div>'; }).join('')
+        : '<div class="news-empty">お知らせはありません</div>';
+    }
+    var m = document.getElementById('md-modal'); if(m) m.classList.add('show');
+  }
+  function mdCloseHistory(){ var m = document.getElementById('md-modal'); if(m) m.classList.remove('show'); }
+  // 本日荷造りタブの注意文（【荷造り】タグ付きだけ・省略表示。クリックで全文）
+  function mdRenderNzNotice_(){
+    var box = document.getElementById('nz-notice');
+    if(!box) return;
+    var list = MD_NEWS.filter(function(n){ return n.nizukuri; });
+    if(!list.length){ box.innerHTML = ''; return; }
+    box.innerHTML = list.slice(0, 4).map(function(n){
+      var short = n.body.length > 46 ? (n.body.slice(0, 46) + '…') : n.body;
+      return '<div class="nz-alert" onclick="mdOpenHistory()" title="クリックで全文">' +
+        '<span class="ic">⚠️</span>' +
+        '<span class="tx"><span class="who">' + escHtml_(n.from || 'お知らせ') + 'さん</span>：' + escHtml_(short) + '</span>' +
+      '</div>';
+    }).join('');
+  }
+  function mdLoadNews_(){
+    gasGet_('news', {}, function(d, err){
+      if(err || !d){ return; }   // 通信エラー時は前回表示のまま（お知らせで画面を壊さない）
+      MD_NEWS = (d && Array.isArray(d.items)) ? d.items : [];
+      MD_NEWS_ERR = (d && d.error) ? String(d.error) : '';
+      try{ localStorage.setItem('hb_news', JSON.stringify({ at: Date.now(), items: MD_NEWS, err: MD_NEWS_ERR })); }catch(e){}
+      mdRenderNews_();
+    });
+  }
+  // 起動直後は前回のお知らせで即描画（bundleと同じ考え方）→ そのあと最新を取りに行く
+  (function(){
+    try{
+      var o = JSON.parse(localStorage.getItem('hb_news') || 'null');
+      if(o && Array.isArray(o.items) && (Date.now() - Number(o.at || 0)) < 12 * 60 * 60 * 1000){
+        MD_NEWS = o.items; MD_NEWS_ERR = o.err || '';
+      }
+    }catch(e){}
+    mdRenderNews_();
+  })();
+  mdLoadNews_();
+  setInterval(mdLoadNews_, 60000);
+
+  /* ===== ⑫ ✅ TODOリスト（センター電子黒板と同じ仕組み） =====
+     「【広島】電子黒板データ」の『広島TODOマスタ』シート（A=業務／B=頻度）に行を足すだけで
+     ここに出る（GAS再デプロイ不要）。チェックはその場で見た目が変わり、GASの『TODO履歴』へ
+     1行追記される（上書きしない＝誰がいつ押したかが残る）。状態は履歴の最新行から組み立てる。 */
+  var TODO_MASTER = [];
+  var TODO_STATE  = {};
+  var _todoPending = 0;   // 送信中の件数（>0の間はbundleからの状態上書きを止める＝自分の操作を潰さない）
+  function todoLocalKey_(){ return 'hb_todo_' + todayStr_(); }
+  function todoLoadLocal_(){ try{ TODO_STATE = JSON.parse(localStorage.getItem(todoLocalKey_()) || '{}') || {}; }catch(e){ TODO_STATE = {}; } }
+  function todoSaveLocal_(){ try{ localStorage.setItem(todoLocalKey_(), JSON.stringify(TODO_STATE)); }catch(e){} }
+  function todoRender_(){
+    var box = document.getElementById('todo-list');
+    if(!box) return;
+    // ⑭ 起動直後、localStorageのbundleで先に描画する経路からも呼ばれる（var宣言より前に走りうる）ので
+    //    未初期化でも落ちないようにしておく
+    if(!TODO_MASTER) TODO_MASTER = [];
+    if(!TODO_STATE)  TODO_STATE = {};
+    if(!TODO_MASTER.length){
+      box.innerHTML = '<div class="todo-empty">TODOがまだ登録されていません。<br>「【広島】電子黒板データ」スプレッドシートの<b>「広島TODOマスタ」</b>シートに、A列＝業務／B列＝頻度（毎日・週1 など）を書き足すとここに出ます。</div>';
+      return;
+    }
+    box.innerHTML = '';
+    TODO_MASTER.forEach(function(it){
+      var row = document.createElement('div');
+      row.className = 'todo-item' + (TODO_STATE[it.task] ? ' done' : '');
+      var b = document.createElement('div'); b.className = 'box';
+      var s = document.createElement('span'); s.className = 'todo-task'; s.textContent = it.task;
+      var f = document.createElement('span'); f.className = 'todo-freq'; f.textContent = it.freq || '';
+      row.appendChild(b); row.appendChild(s); row.appendChild(f);
+      row.addEventListener('click', function(){ todoToggle_(it.task, it.freq); });
+      box.appendChild(row);
+    });
+  }
+  function todoToggle_(task, freq){
+    var next = !TODO_STATE[task];
+    if(next) TODO_STATE[task] = true; else delete TODO_STATE[task];
+    todoSaveLocal_(); todoRender_();
+    _todoPending++;
+    gasPost_('todoLog', { date: todayStr_(), task: task, freq: freq, checked: next, by: deviceLabel_() }, function(){
+      _todoPending = Math.max(0, _todoPending - 1);
+    });
+  }
+  function todoApply_(d){
+    if(!d || d.error) return;
+    if(Array.isArray(d.items)) TODO_MASTER = d.items;
+    if(d.state && !_todoPending){ TODO_STATE = d.state; todoSaveLocal_(); }
+    todoRender_();
+  }
+  todoLoadLocal_(); todoRender_();
+  // 起動直後の1回だけ個別に取りに行く（bundleが返るより先にTODOを出すため。以後はbundleが面倒を見る）
+  gasGet_('todoMaster', { date: todayStr_() }, function(d){ if(d) todoApply_(d); });
 
   /* ===== 生産者タブ（センター電子黒板の生産者タブを簡略移植） ===== */
   var SEISAN = { date:'', list:[] };
@@ -1474,6 +1767,7 @@
     var wrap = document.getElementById('skudiff-rows');
     if(!wrap) return;   // タブ未描画でも落ちないように
     var rows = computeClientDiff_();
+    renderMatchTile_();   // ホーム画面の一致確認タイルも同じタイミングで更新する
     var empty = document.getElementById('skudiff-empty');
     var matchBox = document.getElementById('skudiff-match');
     if(!rows.length){

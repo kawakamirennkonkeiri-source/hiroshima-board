@@ -78,8 +78,172 @@ var CFG = {
   NZ_VIEW_PROP_KEY: 'NZ_VIEW_STATE',
   NZ_VIEW_MAX_DAYS: 14,
 
+  // ===== ⑫ TODOリスト（2026-09-24追加。センター電子黒板の「センターTODOマスタ」と同じ仕組み） =====
+  //   マスタ（A=業務/B=頻度）に行を足すだけで黒板に出る（GAS再デプロイ不要）。
+  //   チェック操作は履歴シートへ1行追記するだけ＝状態は履歴の最新行から都度組み立てる。
+  TODO_MASTER_SHEET: '広島TODOマスタ',
+  TODO_LOG_SHEET:    'TODO履歴',
+
+  // ===== ⑬ Slack連携お知らせ（2026-09-24追加・広島専用チャンネル） =====
+  //   スクリプトプロパティ SLACK_BOT_TOKEN / SLACK_CHANNEL_ID（広島チャンネルのID）を読む。
+  //   未設定のあいだは ?type=news が {error:...} を返すだけ＝他の機能には一切影響しない。
+  NEWS_SHOW_DAYS: 14,                                   // 黒板に出す日数
+  NEWS_NIZUKURI_TAG_RE: /^\s*[【\[]\s*荷造り\s*[】\]]\s*/, // 先頭の【荷造り】→本日荷造りタブにも注意文
+  NEWS_FALLBACK_NAME: 'お知らせ',
+  NEWS_CACHE_SEC: 60,
+
+  // ===== ⑭ 応答キャッシュ（2026-09-24追加・「開くのが遅い」対策） =====
+  //   bundleは発注書スプレッドシートを何度も読むため実測16〜17秒かかっていた。
+  //   組み立て結果をCacheServiceへ入れ、次からはキャッシュを返す（＝1.5〜2秒）。
+  BUNDLE_CACHE_SEC: 900,       // キャッシュの保持時間（秒）。これを過ぎたら必ず作り直す
+  BUNDLE_MAX_AGE_SEC: 180,     // 既定の許容鮮度。?maxAge=600 のように呼び出し側から緩められる
+                               //   ⚠保存（POST）のたびにキャッシュを捨てるので、誰かが入力した内容は
+                               //     この秒数を待たずに次のポーリングで全PCへ反映される。
+                               //     この値が効くのは「誰も何も触っていない時に作り直すか」だけ。
+  CACHE_CHUNK: 90000,          // CacheServiceの1キー上限(100KB)に収めるための分割サイズ
+  // キャッシュ温めトリガーを動かす時間帯（この外では即return＝Apps Scriptの
+  // 「トリガーの合計実行時間」の1日あたり上限を使い切らないようにするため）
+  CACHE_WARM_HOUR_FROM: 5,
+  CACHE_WARM_HOUR_TO: 19,
+
   MARK_PRESENT: '〇'
 };
+
+// ============================================================
+// ★ 実行内メモ化（2026-09-24追加・高速化）
+//   同じ1回のリクエストの中で SpreadsheetApp.openById / getDataRange().getValues() が
+//   何度も走っていた（bundleは発注書スプレッドシートを5回開き直していた＝実測16.9秒）。
+//   ・スプレッドシートを開く操作＝IDごとに1回だけ
+//   ・発注書スプレッドシート（読み取り専用）のセル値＝シートごとに1回だけ
+//   ⚠値のメモ化は「読み取り専用」と決めてある発注書スプレッドシートに限定する。
+//     書き込みがあるDATA_SS_ID側は、開いたオブジェクトだけ使い回して値はメモ化しない
+//     （保存直後に古い値を返してしまうのを防ぐため）。
+// ============================================================
+var _SS_MEMO_  = {};   // { spreadsheetId: Spreadsheet }
+var _ORD_MEMO_ = {};   // { sheetName: values[][] }（発注書スプレッドシートのみ）
+function ssById_(id){
+  if(!_SS_MEMO_[id]) _SS_MEMO_[id] = SpreadsheetApp.openById(id);
+  return _SS_MEMO_[id];
+}
+
+// ============================================================
+// ★ 応答キャッシュ（2026-09-24追加・「開くのが遅い」対策）
+//   CacheServiceの1キー上限は約100KBなので、長い本文は CFG.CACHE_CHUNK 文字ずつに分割して
+//   「<key>.n（個数）」＋「<key>.0, <key>.1 …」のキーに入れる。
+//   キャッシュはあくまで表示の高速化用＝壊れていたら黙って作り直す（例外は握りつぶす）。
+// ============================================================
+function cachePut_(key, text, sec){
+  try{
+    var cache = CacheService.getScriptCache();
+    var size = CFG.CACHE_CHUNK, parts = [];
+    for(var i = 0; i < text.length; i += size) parts.push(text.substring(i, i + size));
+    if(parts.length > 20) return false;   // 大きすぎる（想定外）＝キャッシュしない
+    var map = { };
+    map[key + '.n'] = String(parts.length);
+    for(var j = 0; j < parts.length; j++) map[key + '.' + j] = parts[j];
+    cache.putAll(map, sec);
+    return true;
+  }catch(err){ return false; }
+}
+function cacheGet_(key){
+  try{
+    var cache = CacheService.getScriptCache();
+    var n = Number(cache.get(key + '.n') || 0);
+    if(!n) return null;
+    var names = [];
+    for(var i = 0; i < n; i++) names.push(key + '.' + i);
+    var got = cache.getAll(names);
+    var out = '';
+    for(var j = 0; j < n; j++){
+      var p = got[key + '.' + j];
+      if(p == null) return null;   // 1つでも欠けていたら無効（作り直す）
+      out += p;
+    }
+    return out;
+  }catch(err){ return null; }
+}
+function cacheDrop_(key){
+  try{
+    var cache = CacheService.getScriptCache();
+    var n = Number(cache.get(key + '.n') || 0);
+    var names = [key + '.n'];
+    for(var i = 0; i < n; i++) names.push(key + '.' + i);
+    cache.removeAll(names);
+  }catch(err){}
+}
+function bundleCacheKey_(params){
+  var d = String((params && params.date) || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
+  return 'HB_BUNDLE_' + d;
+}
+// 本日ぶんのbundleキャッシュを捨てる（保存系POSTの直後に呼ぶ＝自分の保存がすぐ画面に返るように）
+function dropBundleCacheToday_(){ cacheDrop_(bundleCacheKey_({})); }
+
+// キャッシュ付きbundle。
+//   ?maxAge=秒 … これより古いキャッシュは作り直す（既定 CFG.BUNDLE_MAX_AGE_SEC）。
+//                 画面を開いた直後は maxAge を大きめ（例600）にして「まず出す」のが速い。
+//   ?nocache=1 … キャッシュを無視して必ず作り直す（診断用）。
+function getBundleCached_(params){
+  params = params || {};
+  var key = bundleCacheKey_(params);
+  var now = Date.now();
+  var maxAge = Number(params.maxAge);
+  if(!(maxAge >= 0)) maxAge = CFG.BUNDLE_MAX_AGE_SEC;
+  if(String(params.nocache || '') !== '1'){
+    var raw = cacheGet_(key);
+    if(raw){
+      try{
+        var hit = JSON.parse(raw);
+        var age = (now - Number(hit._builtAtMs || 0)) / 1000;
+        if(age >= 0 && age <= maxAge){ hit._cache = 'hit'; hit._ageSec = Math.round(age); return hit; }
+      }catch(e){}
+    }
+  }
+  var out = getBundle_(params);
+  out._builtAtMs = Date.now();
+  out._builtAt = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd HH:mm:ss');
+  out._cache = 'miss';
+  out._ageSec = 0;
+  cachePut_(key, JSON.stringify(out), CFG.BUNDLE_CACHE_SEC);
+  return out;
+}
+
+// ★ 5分おきのトリガーに登録しておくと、キャッシュが常に温まっている＝朝いちで開く人も待たされない。
+//   Apps Scriptエディタで installBoardCacheTrigger を1回だけ▶実行すれば設置できる（任意）。
+//   ⚠Apps Scriptには「トリガーの合計実行時間」の1日あたり上限がある（個人アカウントは90分/日）。
+//     bundleの組み立ては数秒かかるので、1分おきに24時間動かすと上限を使い切ってしまう。
+//     そのため①5分おき②稼働時間帯（CFG.CACHE_WARM_HOUR_FROM〜TO）の外は即returnする、の2点で
+//     1日あたりの合計実行時間を十分小さく抑えている。
+function refreshBoardCache(){
+  var hour = Number(Utilities.formatDate(new Date(), CFG.TZ, 'H'));
+  if(hour < CFG.CACHE_WARM_HOUR_FROM || hour >= CFG.CACHE_WARM_HOUR_TO) return 'skip(時間外)';
+  var params = { date: Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd') };
+  var out = getBundle_(params);
+  out._builtAtMs = Date.now();
+  out._builtAt = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd HH:mm:ss');
+  out._cache = 'trigger';
+  out._ageSec = 0;
+  cachePut_(bundleCacheKey_(params), JSON.stringify(out), CFG.BUNDLE_CACHE_SEC);
+  try{ getNewsCached_(true); }catch(e){}   // Slackお知らせも一緒に温めておく
+  return out._builtAt;
+}
+// 5分おきのトリガーを設置（重複して作らないよう既存の同名トリガーは消してから作る）
+function installBoardCacheTrigger(){
+  var all = ScriptApp.getProjectTriggers();
+  for(var i = 0; i < all.length; i++){
+    if(all[i].getHandlerFunction() === 'refreshBoardCache') ScriptApp.deleteTrigger(all[i]);
+  }
+  ScriptApp.newTrigger('refreshBoardCache').timeBased().everyMinutes(5).create();
+  Logger.log('✅ refreshBoardCache を5分おきに設置しました（'
+    + CFG.CACHE_WARM_HOUR_FROM + '時〜' + CFG.CACHE_WARM_HOUR_TO + '時のあいだだけ動きます）。'
+    + '電子黒板が常に速く開くようになります。');
+}
+function uninstallBoardCacheTrigger(){
+  var all = ScriptApp.getProjectTriggers(), n = 0;
+  for(var i = 0; i < all.length; i++){
+    if(all[i].getHandlerFunction() === 'refreshBoardCache'){ ScriptApp.deleteTrigger(all[i]); n++; }
+  }
+  Logger.log('🗑 refreshBoardCache のトリガーを ' + n + ' 件削除しました');
+}
 
 // ============================================================
 // 入口：?type=... & ?callback=... で分岐（JSONP）
@@ -111,10 +275,12 @@ function doGet(e){
     else if(type === 'debugHojoSource') out = debugHojoSource_(e.parameter);       // ⑧ 診断用：朝礼ボード連携
     else if(type === 'progressByClient') out = getProgressByClient_(e.parameter);  // 🔍 進捗差分：発注書「進捗」シートの取引先別荷造数
     else if(type === 'debugProgress') out = debugProgress_(e.parameter);           // 🔍 診断用
-    else if(type === 'bundle')       out = getBundle_(e.parameter);
+    else if(type === 'todoMaster')   out = getTodoBoard_(e.parameter.date);        // ⑫ TODOリスト：マスタ一覧＋本日のチェック状態
+    else if(type === 'news')         out = getNewsCached_(String(e.parameter.nocache||'')==='1'); // ⑬ Slack連携お知らせ（広島チャンネル）
+    else if(type === 'bundle')       out = getBundleCached_(e.parameter);          // ⑭ 高速化：CacheService経由（?nocache=1で強制再計算）
     else if(type === 'debug')        out = debugTop_();
     else if(type === 'debugOrder')   out = debugOrder_(e.parameter);
-    else out = { error:'type を progress / funes / progressTestGet / seisanGet / nizukuri / mainStats / shizaiAlerts / shizaiLoad / shizaiMeta / shizaiBackupList / shizaiBackupGet / shizaiUsage / shift / haichiGet / nizukuriFull / nizukuriFullDays / nzViewGet / hojoGet / progressByClient / bundle / debug のいずれかで指定してください' };
+    else out = { error:'type を progress / funes / progressTestGet / seisanGet / nizukuri / mainStats / shizaiAlerts / shizaiLoad / shizaiMeta / shizaiBackupList / shizaiBackupGet / shizaiUsage / shift / haichiGet / nizukuriFull / nizukuriFullDays / nzViewGet / hojoGet / progressByClient / todoMaster / news / bundle / debug のいずれかで指定してください' };
   }catch(err){
     out = { error: String(err && err.message || err) };
   }
@@ -147,7 +313,11 @@ function doPost(e){
     else if(action === 'nizukuriMadeSave')  out = nzMadeSave_(body);   // ⑦ 本日作った分（生産ログupsert）
     else if(action === 'nzViewSave')        out = nzViewSave_(body);  // ⑦-b 本日荷造りタブの表示ウィンドウ（全PC共有）
     else if(action === 'hojoSave')          out = hojoSave_(body);    // ⑧ 圃場（畑）から持ってきた舟数
+    else if(action === 'todoLog')           out = todoLogAppend_(body); // ⑫ TODOのチェック/解除を履歴へ1行追記
     else out = { ok:false, error:'unknown action: ' + action };
+    // ⑭ 保存された内容はbundleにも含まれるので、本日ぶんのキャッシュを捨てて次の取得で作り直させる
+    //   （＝保存したのに30秒〜数分そのまま古い値が返る、というのを防ぐ）
+    if(out && out.ok !== false) { try{ dropBundleCacheToday_(); }catch(e){} }
   }catch(err){
     out = { ok:false, error:String(err && err.message || err) };
   }
@@ -174,7 +344,8 @@ function getBundle_(params){
     shizaiAlerts: safe(function(){ return getShizaiAlerts_(); }),
     shift:        safe(function(){ return getHiroshimaShiftToday_(params); }),
     hojo:         safe(function(){ return hojoGet_(params); }),                // ⑧ 舟数モニター・歩留まりの分母に使用
-    progressByClient: safe(function(){ return getProgressByClient_(params); }) // 🔍 進捗差分タブ用
+    progressByClient: safe(function(){ return getProgressByClient_(params); }), // 🔍 進捗差分タブ用
+    todo:         safe(function(){ return getTodoBoard_(params.date); })       // ⑫ TODOリスト（軽い＝DATA_SS側の2シートを読むだけ）
     // ⚠配置図（haichiGet/haichiSave）は生産者タブと同様、タブを開いた時だけ読み込む＝
     //   30秒バンドルポーリングの対象には含めない（負荷を増やさないため）
   };
@@ -266,9 +437,26 @@ function parseMonthDayParam_(s){
 }
 
 // 発注書スプレッドシートを「読み取り専用」で開く（このファイル内では書き込みAPIを絶対に呼ばないこと）
+//   2026-09-24：戻り値を「getDataRange().getValues() をメモ化した読み取り専用ラッパー」に変更。
+//   呼び出し側（getProgressToday_/getFunesToday_/getNizukuriToday_/getMainStatsToday_/
+//   readOrderProgressByClient_/getShizaiUsage_/debug系）は今まで通り
+//   `sh.getDataRange().getValues()` と書けばよく、実際のシート読み取りは1回だけになる。
+//   ⚠ラッパーは読み取り専用（getValues/getNameのみ）＝発注書スプレッドシートへの
+//     書き込みAPIを誤って呼べない作りにもなっている（このファイルの最重要ルールの補強）。
 function openOrderSheetReadOnly_(sheetName){
-  var ss = SpreadsheetApp.openById(CFG.ORDER_SS_ID);
-  return ss.getSheetByName(sheetName);
+  var sh = ssById_(CFG.ORDER_SS_ID).getSheetByName(sheetName);
+  if(!sh) return null;
+  return {
+    getName: function(){ return sh.getName(); },
+    getDataRange: function(){
+      return {
+        getValues: function(){
+          if(!_ORD_MEMO_.hasOwnProperty(sheetName)) _ORD_MEMO_[sheetName] = sh.getDataRange().getValues();
+          return _ORD_MEMO_[sheetName];
+        }
+      };
+    }
+  };
 }
 
 // ============================================================
@@ -503,7 +691,7 @@ function nzOrderKey_(date, o){
 
 // ---- 状態（未確定/確定/作成済み）・総舟数の当日上書き。「その日付だけ入れ替え」方式 ----
 function nzStateSheet_(){
-  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var ss = ssById_(CFG.DATA_SS_ID);
   var name = CFG.NZ_STATE_SHEET || '本日荷造り状態';
   var sh = ss.getSheetByName(name);
   if(!sh){ sh = ss.insertSheet(name); sh.appendRow(['日付', '更新日時', '端末', '入力内容(JSON)']); try{ sh.setFrozenRows(1); }catch(e){} }
@@ -553,7 +741,7 @@ function nzStateSave_(body){
 
 // ---- 生産ログ（本日作った分。日付を跨いで蓄積＝upsert方式。前日作成(累計)の計算根拠） ----
 function nzLogSheet_(){
-  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var ss = ssById_(CFG.DATA_SS_ID);
   var name = CFG.NZ_LOG_SHEET || '本日荷造り生産ログ';
   var sh = ss.getSheetByName(name);
   if(!sh){ sh = ss.insertSheet(name); sh.appendRow(['キー', '生産日', '納品日', '取引先', '区分', '入数', '数量cs', '更新日時', '端末']); try{ sh.setFrozenRows(1); }catch(e){} }
@@ -643,7 +831,7 @@ function nzMadeSave_(body){
 
 // ---- NEW判定（前回スナップショットと比較。初回実行は基準化のみ＝NEW扱いにしない） ----
 function nzSnapSheet_(){
-  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var ss = ssById_(CFG.DATA_SS_ID);
   var name = CFG.NZ_SNAP_SHEET || '本日荷造りスナップショット';
   var sh = ss.getSheetByName(name);
   var firstEver = false;
@@ -864,7 +1052,7 @@ function getShizaiAlerts_(){
     var materials = s.materials || [];
     var latestByName = {};
     try{
-      var stockSh = SpreadsheetApp.openById(CFG.DATA_SS_ID).getSheetByName(CFG.SHIZAI_STOCK_SHEET);
+      var stockSh = ssById_(CFG.DATA_SS_ID).getSheetByName(CFG.SHIZAI_STOCK_SHEET);
       if(stockSh){
         var sv = stockSh.getDataRange().getValues();
         if(sv.length > 1){
@@ -897,7 +1085,7 @@ function getShizaiAlerts_(){
 //   保存形：日付ごとに1行。列＝日付／更新日時／端末／(見出しラベル)ごとの値（JSON1セル）
 // ============================================================
 function progressTestSheet_(){
-  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var ss = ssById_(CFG.DATA_SS_ID);
   var name = CFG.PROGRESS_TEST_SHEET || '進捗テスト';
   var sh = ss.getSheetByName(name);
   if(!sh){
@@ -946,7 +1134,7 @@ function progressTestSave_(body){
 //   列＝日付/時間帯/生産者/区分/サイズkg/舟数/出来高kg/更新日時
 // ============================================================
 function seisanSheet_(){
-  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var ss = ssById_(CFG.DATA_SS_ID);
   var name = CFG.SEISAN_SHEET || '生産者記録';
   var sh = ss.getSheetByName(name);
   if(!sh){ sh = ss.insertSheet(name); sh.appendRow(['日付','時間帯','生産者','区分','サイズkg','舟数','出来高kg','更新日時']); try{ sh.setFrozenRows(1); }catch(e){} }
@@ -1027,7 +1215,7 @@ function seisanSave_(body){
 //   列＝日付/圃場名/舟数/更新日時
 // ============================================================
 function hojoSheet_(){
-  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var ss = ssById_(CFG.DATA_SS_ID);
   var name = CFG.HOJO_SHEET || '圃場舟数';
   var sh = ss.getSheetByName(name);
   if(!sh){ sh = ss.insertSheet(name); sh.appendRow(['日付','圃場名','舟数','更新日時']); try{ sh.setFrozenRows(1); }catch(e){} }
@@ -1035,7 +1223,7 @@ function hojoSheet_(){
 }
 // 朝礼ボードのシートを開く（gidで特定。見つからなければ先頭シートにフォールバック）
 function hojoSourceSheet_(){
-  var ss = SpreadsheetApp.openById(CFG.HOJO_SOURCE_SS_ID);
+  var ss = ssById_(CFG.HOJO_SOURCE_SS_ID);
   var sheets = ss.getSheets();
   for(var i = 0; i < sheets.length; i++){
     if(String(sheets[i].getSheetId()) === String(CFG.HOJO_SOURCE_GID)) return sheets[i];
@@ -1088,7 +1276,7 @@ function debugHojoSource_(params){
   params = params || {};
   var out = { ssId: CFG.HOJO_SOURCE_SS_ID, gid: CFG.HOJO_SOURCE_GID };
   try{
-    var ss = SpreadsheetApp.openById(CFG.HOJO_SOURCE_SS_ID);
+    var ss = ssById_(CFG.HOJO_SOURCE_SS_ID);
     out.allSheets = ss.getSheets().map(function(s){ return { name: s.getName(), gid: s.getSheetId() }; });
     var sh = hojoSourceSheet_();
     out.usedSheetName = sh.getName();
@@ -1218,7 +1406,7 @@ function debugProgress_(params){
 //     A5〜 ＝ JSON文字列を45000字ごとに分割して縦に格納
 // ============================================================
 function shizaiSheet_(){
-  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var ss = ssById_(CFG.DATA_SS_ID);
   var name = CFG.SHIZAI_SHEET || '資材データ';
   var sh = ss.getSheetByName(name);
   if(!sh){
@@ -1288,7 +1476,7 @@ function saveShizaiState_(body){
 //   「資材バックアップ」シート：A=対象月/日 / B=保存日時 / C=保存端末 / D=文字数 / E=分割数 / F〜=JSON
 // ============================================================
 function shizaiBackupSheet_(){
-  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var ss = ssById_(CFG.DATA_SS_ID);
   var name = CFG.SHIZAI_BACKUP_SHEET || '資材バックアップ';
   var sh = ss.getSheetByName(name);
   if(!sh){ sh = ss.insertSheet(name); sh.appendRow(['対象月', '保存日時', '保存端末', '文字数', '分割数', 'JSON→']); }
@@ -1319,7 +1507,7 @@ function writeStocktakeTable_(colLabel, stock){
   if(!colLabel || !stock) return;
   var rows = (typeof stock === 'string') ? JSON.parse(stock) : stock;
   if(!rows || !rows.length) return;
-  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var ss = ssById_(CFG.DATA_SS_ID);
   var name = CFG.SHIZAI_STOCK_SHEET || '月末棚卸（実数）';
   var sh = ss.getSheetByName(name);
   if(!sh){ sh = ss.insertSheet(name); sh.appendRow(['資材', '単位']); }
@@ -1477,7 +1665,7 @@ function getHiroshimaShiftToday_(params){
   params = params || {};
   var target = resolveTargetDate_(params.date);
   var ymd = Utilities.formatDate(target, CFG.TZ, 'yyyy-MM-dd');
-  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var ss = ssById_(CFG.DATA_SS_ID);
   var sheetName = findShiftSheetName_(ss, target);
   if(!sheetName){
     var rm = reiwaYearMonth_(target);
@@ -1506,7 +1694,7 @@ function getHiroshimaShiftToday_(params){
 
 // ---- 力量表（○/△/×。曽我さんがスプレッドシートを直接編集して調整する運用。保存APIは無い） ----
 function haichiSkillSheet_(rosterNames){
-  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var ss = ssById_(CFG.DATA_SS_ID);
   var name = CFG.HAICHI_SKILL_SHEET || '力量表';
   var zones = CFG.HAICHI_ZONES || [];
   var sh = ss.getSheetByName(name);
@@ -1569,7 +1757,7 @@ function haichiReadSkills_(rosterNames){
 //      タップで循環（空欄→1→2→3→4→5→×→空欄）：数字が小さいほど先に配置、×はそのゾーンに配置不可、
 //      空欄は「配置はできるが優先されない（最後に回される）」扱い。アプリから編集可能） ----
 function haichiPrioSheet_(rosterNames){
-  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var ss = ssById_(CFG.DATA_SS_ID);
   var name = CFG.HAICHI_PRIO_SHEET || '配置優先';
   var zones = CFG.HAICHI_ZONES || [];
   var sh = ss.getSheetByName(name);
@@ -1628,7 +1816,7 @@ function haichiReadPrio_(rosterNames){
 // ---- 配置設定（ゾーンID・表示名・定員・優先度。スプレッドシート直接編集に加えて、
 //      アプリの「⚙ ゾーン設定」からも編集可能。優先度＝自動配置でゾーンを埋める順番（数字が小さいほど先）） ----
 function haichiCfgSheet_(){
-  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var ss = ssById_(CFG.DATA_SS_ID);
   var name = CFG.HAICHI_CFG_SHEET || '配置設定';
   var zones = CFG.HAICHI_ZONES || [];
   var sh = ss.getSheetByName(name);
@@ -1697,7 +1885,7 @@ function haichiZoneCfgSave_(body){
 
 // ---- 配置図状態（本日の配置・欠勤上書き・応援追加。生産者記録と同じ「その日付だけ入れ替え」方式） ----
 function haichiStateSheet_(){
-  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var ss = ssById_(CFG.DATA_SS_ID);
   var name = CFG.HAICHI_STATE_SHEET || '配置図状態';
   var sh = ss.getSheetByName(name);
   if(!sh){ sh = ss.insertSheet(name); sh.appendRow(['日付', '更新日時', '端末', '入力内容(JSON)']); try{ sh.setFrozenRows(1); }catch(e){} }
@@ -1772,7 +1960,7 @@ function debugShift_(params){
   var target = resolveTargetDate_(params.date);
   var rm = reiwaYearMonth_(target);
   var wantName = 'R' + rm.reiwa + '年' + rm.month + '月';
-  var ss = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+  var ss = ssById_(CFG.DATA_SS_ID);
   var out = { wantSheetName: wantName, dataSheetNames: ss.getSheets().map(function(s){ return s.getName(); }) };
   var sh = ss.getSheetByName(wantName);
   if(!sh) return out;
@@ -1789,11 +1977,11 @@ function debugShift_(params){
 function debugTop_(){
   var out = { orderSheetNames: [], dataSheetNames: [] };
   try{
-    var orderSs = SpreadsheetApp.openById(CFG.ORDER_SS_ID);
+    var orderSs = ssById_(CFG.ORDER_SS_ID);
     out.orderSheetNames = orderSs.getSheets().map(function(s){ return s.getName(); });
   }catch(e){ out.orderSheetError = String(e); }
   try{
-    var dataSs = SpreadsheetApp.openById(CFG.DATA_SS_ID);
+    var dataSs = ssById_(CFG.DATA_SS_ID);
     out.dataSheetNames = dataSs.getSheets().map(function(s){ return s.getName(); });
   }catch(e){ out.dataSheetError = String(e); }
 
@@ -1839,3 +2027,214 @@ function testShizaiAlerts(){ Logger.log(JSON.stringify(getShizaiAlerts_(), null,
 function testShift(){ Logger.log(JSON.stringify(getHiroshimaShiftToday_({}), null, 2)); }
 function testHaichi(){ Logger.log(JSON.stringify(getHaichiGet_({}), null, 2)); }
 function testNizukuriFull(){ Logger.log(JSON.stringify(getNizukuriFull_({}), null, 2)); }
+
+// ============================================================
+// ⑫ TODOリスト（2026-09-24追加・曽我さん依頼。センター電子黒板の「センターTODOマスタ」と同じ仕組み）
+//   ・マスタ＝DATA_SS_ID内「広島TODOマスタ」（A=業務／B=頻度、1行目は見出し）。
+//     このシートに行を足すだけで黒板に出る（GAS再デプロイ不要）。無ければ見出しだけ自動作成。
+//   ・チェック状態は別に持たず、「TODO履歴」シートへ操作を1行ずつ追記し、
+//     指定日の各業務の最新行（＝毎回降順ソートしているので先頭）から組み立てる＝操作履歴も残る。
+//   ・GET  ?type=todoMaster&date=yyyy-MM-dd → { date, items:[{task,freq}], state:{業務名:true,…} }
+//   ・POST { action:'todoLog', date, task, freq, checked:true/false, by } → 履歴へ1行追記
+//   ※センターにあるGoogleカレンダー連携（TODO_CALENDAR_ID）は広島には無い（カレンダー運用が無いため）。
+// ============================================================
+function todoMasterSheet_(){
+  var ss = ssById_(CFG.DATA_SS_ID);
+  var name = CFG.TODO_MASTER_SHEET;
+  var sh = ss.getSheetByName(name);
+  if(!sh){
+    sh = ss.insertSheet(name);
+    sh.appendRow(['業務', '頻度']);
+    try{ sh.setFrozenRows(1); }catch(e){}
+  }
+  return sh;
+}
+function todoMasterList_(){
+  var sh = todoMasterSheet_();
+  var last = sh.getLastRow();
+  if(last < 2) return [];
+  var v = sh.getRange(2, 1, last - 1, 2).getValues();
+  var out = [];
+  for(var r = 0; r < v.length; r++){
+    var task = String(v[r][0] == null ? '' : v[r][0]).trim();
+    if(!task) continue;
+    out.push({ task: task, freq: String(v[r][1] == null ? '' : v[r][1]).trim() });
+  }
+  return out;
+}
+function todoLogSheet_(){
+  var ss = ssById_(CFG.DATA_SS_ID);
+  var name = CFG.TODO_LOG_SHEET;
+  var sh = ss.getSheetByName(name);
+  if(!sh){
+    sh = ss.insertSheet(name);
+    sh.appendRow(['日付', '業務', '頻度', '操作', '更新日時', '端末']);
+    try{ sh.setFrozenRows(1); }catch(e){}
+  }
+  return sh;
+}
+// 指定日の各業務の最新チェック状態（チェック中のものだけ {業務名:true} で持つ）
+function getTodoState_(dateStr){
+  var sh = todoLogSheet_();
+  var last = sh.getLastRow();
+  if(last < 2) return {};
+  var v = sh.getRange(2, 1, last - 1, 6).getValues();
+  var state = {}, seen = {};
+  for(var r = 0; r < v.length; r++){
+    var d = v[r][0];
+    var dstr = (d instanceof Date) ? Utilities.formatDate(d, CFG.TZ, 'yyyy-MM-dd') : String(d == null ? '' : d).trim();
+    if(dstr !== dateStr) continue;
+    var task = String(v[r][1] == null ? '' : v[r][1]).trim();
+    if(!task || seen[task]) continue;
+    seen[task] = true;                                   // 降順ソート済み＝最初に出会った行が最新
+    if(String(v[r][3] == null ? '' : v[r][3]).trim() === 'チェック') state[task] = true;
+  }
+  return state;
+}
+function getTodoBoard_(dateStr){
+  dateStr = String(dateStr || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
+  return { date: dateStr, items: todoMasterList_(), state: getTodoState_(dateStr) };
+}
+function todoLogAppend_(body){
+  var lock = LockService.getScriptLock();
+  try{ lock.waitLock(15000); }catch(e){ return { ok:false, error:'busy（他の保存処理中）' }; }
+  try{
+    var sh = todoLogSheet_();
+    var date = String(body.date || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
+    var task = String(body.task || '').trim();
+    if(!task) return { ok:false, error:'業務名が空です' };
+    var freq = String(body.freq || '').trim();
+    var now  = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd HH:mm:ss');
+    var action = body.checked ? 'チェック' : '解除';
+    sh.appendRow([date, task, freq, action, now, String(body.by || '')]);
+    // 日付列は文字列固定（生産ログと同じ理由＝Date型だとシートのタイムゾーンで前日にずれることがある）
+    var lastRow = sh.getLastRow();
+    sh.getRange(lastRow, 1).setNumberFormat('@').setValue(date);
+    todoSortLogDesc_(sh);
+    return { ok:true, date:date, task:task, action:action };
+  }catch(err){
+    return { ok:false, error:String(err && err.message || err) };
+  }finally{
+    try{ lock.releaseLock(); }catch(e){}
+  }
+}
+// 「更新日時」（E列）の降順に並べ替え＝getTodoState_が先頭行だけ見れば最新状態になる
+function todoSortLogDesc_(sh){
+  try{
+    var last = sh.getLastRow();
+    if(last < 3) return;
+    sh.getRange(2, 1, last - 1, 6).sort({ column: 5, ascending: false });
+  }catch(e){}
+}
+function testTodo(){ Logger.log(JSON.stringify(getTodoBoard_(''), null, 2)); }
+
+// ============================================================
+// ⑬ Slack連携お知らせ（2026-09-24追加・曽我さん依頼。広島専用チャンネル）
+//   センターの「MD部お知らせ連携」GASと同じ仕組みを、別プロジェクトを作らずこのGASに同居させた
+//   （センターは専用GASを別に立てているが、広島は既に1つのGASに全部入っているのでそちらに合わせた）。
+//
+//   ★必要な設定（Apps Scriptエディタ ⚙プロジェクトの設定 → スクリプト プロパティ）：
+//       SLACK_BOT_TOKEN  … Slackアプリの Bot User OAuth Token（xoxb-…）
+//       SLACK_CHANNEL_ID … 広島用チャンネルのID（C…）
+//   ★Slack側：そのチャンネルで /invite @＜アプリ名＞ してBotを招待しておくこと。
+//   未設定のあいだは {error:…} を返すだけ＝黒板側は「お知らせはありません」と出るだけで他は壊れない。
+//
+//   返す各要素：{ from, posted:'yyyy-MM-dd', time:'HH:mm', body, nizukuri:Boolean }
+//   投稿の先頭に【荷造り】を付けると nizukuri:true になり、黒板の本日荷造りタブにも注意文が出る。
+// ============================================================
+function getNewsCached_(force){
+  var key = 'HB_NEWS';
+  if(!force){
+    var raw = cacheGet_(key);
+    if(raw){ try{ return JSON.parse(raw); }catch(e){} }
+  }
+  var out;
+  try{ out = { items: fetchHiroshimaNotices_() }; }
+  catch(err){ out = { error: String((err && err.message) || err), items: [] }; }
+  out.fetchedAt = Utilities.formatDate(new Date(), CFG.TZ, 'HH:mm:ss');
+  // エラー（未設定・権限不足）も短くキャッシュして、Slackを叩き続けないようにする
+  cachePut_(key, JSON.stringify(out), CFG.NEWS_CACHE_SEC);
+  return out;
+}
+function fetchHiroshimaNotices_(){
+  var props   = PropertiesService.getScriptProperties();
+  var token   = props.getProperty('SLACK_BOT_TOKEN') || '';
+  var channel = props.getProperty('SLACK_CHANNEL_ID') || '';
+  if(!token || !channel){
+    throw new Error('SLACK_BOT_TOKEN / SLACK_CHANNEL_ID をスクリプトプロパティに設定してください');
+  }
+  var oldest = Math.floor((Date.now() - CFG.NEWS_SHOW_DAYS * 24 * 60 * 60 * 1000) / 1000);
+  var url = 'https://slack.com/api/conversations.history'
+          + '?channel=' + encodeURIComponent(channel)
+          + '&oldest='  + oldest
+          + '&limit=200';
+  var res = UrlFetchApp.fetch(url, {
+    method: 'get',
+    headers: { Authorization: 'Bearer ' + token },
+    muteHttpExceptions: true
+  });
+  var data = JSON.parse(res.getContentText());
+  if(!data.ok){
+    throw new Error('Slack APIエラー: ' + data.error
+      + '（Botをチャンネルに /invite したか、channels:history / groups:history / users:read 権限を確認）');
+  }
+  var out = [];
+  (data.messages || []).forEach(function(m){
+    if(m.subtype && m.subtype !== 'thread_broadcast') return;   // 参加通知・bot投稿はスキップ
+    if(!m.text || !String(m.text).trim()) return;
+    var raw  = newsCleanText_(m.text);
+    var isNz = CFG.NEWS_NIZUKURI_TAG_RE.test(raw);
+    var body = isNz ? raw.replace(CFG.NEWS_NIZUKURI_TAG_RE, '').trim() : raw;
+    if(!body) return;
+    var when = new Date(Number(m.ts) * 1000);
+    out.push({
+      from:     newsUserName_(token, m.user),
+      posted:   Utilities.formatDate(when, CFG.TZ, 'yyyy-MM-dd'),
+      time:     Utilities.formatDate(when, CFG.TZ, 'HH:mm'),
+      body:     body,
+      nizukuri: isNz
+    });
+  });
+  out.sort(function(a, b){
+    if(a.posted !== b.posted) return a.posted < b.posted ? 1 : -1;
+    return a.time < b.time ? 1 : (a.time > b.time ? -1 : 0);
+  });
+  return out;
+}
+// Slackのメンション記法・装飾を軽く整形（センターの cleanText_ と同じ）
+function newsCleanText_(t){
+  return String(t)
+    .replace(/<https?:\/\/[^|>]+\|([^>]+)>/g, '$1')
+    .replace(/<https?:\/\/[^>]+>/g, '')
+    .replace(/<@[A-Z0-9]+>/g, '@さん')
+    .replace(/[*_~`]/g, '')
+    .trim();
+}
+// user_id → 表示名（6時間キャッシュ。毎回users.infoを叩くと遅くなるため）
+function newsUserName_(token, userId){
+  if(!userId) return CFG.NEWS_FALLBACK_NAME;
+  var cache = CacheService.getScriptCache();
+  var hit = cache.get('hbu_' + userId);
+  if(hit) return hit;
+  try{
+    var res = UrlFetchApp.fetch('https://slack.com/api/users.info?user=' + userId, {
+      headers: { Authorization: 'Bearer ' + token }, muteHttpExceptions: true });
+    var d = JSON.parse(res.getContentText());
+    var name = CFG.NEWS_FALLBACK_NAME;
+    if(d.ok && d.user){
+      var p = d.user.profile || {};
+      name = p.display_name || d.user.real_name || p.real_name || d.user.name || CFG.NEWS_FALLBACK_NAME;
+    }
+    cache.put('hbu_' + userId, name, 6 * 60 * 60);
+    return name;
+  }catch(err){ return CFG.NEWS_FALLBACK_NAME; }
+}
+// エディタから▶実行して疎通確認（取得件数と先頭のお知らせがログに出る）
+function testNews(){ Logger.log(JSON.stringify(getNewsCached_(true), null, 2)); }
+
+// ⑭ 高速化の効き具合を測る（キャッシュ無しで組み立てた時間と、キャッシュ経由の時間をログに出す）
+function testBundleSpeed(){
+  var t0 = Date.now(); getBundleCached_({ nocache:'1' }); var t1 = Date.now();
+  getBundleCached_({ maxAge:'600' }); var t2 = Date.now();
+  Logger.log('組み立て（キャッシュ無し）: ' + ((t1 - t0) / 1000) + '秒 ／ キャッシュ経由: ' + ((t2 - t1) / 1000) + '秒');
+}
