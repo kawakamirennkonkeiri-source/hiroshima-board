@@ -1573,35 +1573,93 @@ function getShizaiBackup_(params){
 }
 
 // ============================================================
-// ③ 資材管理アプリ：期間内の使用量集計（進捗シートを読み取りのみで参照。書き込みはしない）
-//   進捗シートの列見出しに「荷造数」を含む列を全て拾い、指定期間で合計する。
-//   列見出しがそのままSKU名になる（取引先/規格を厳密に分解できない見出し構造のため、
-//   見出し文字列をそのままキーにすることで誤集計のリスクを避ける）。
-//   ?type=shizaiUsage&start=2026-08-01&end=2026-08-31
+// ③ 資材管理アプリ：SKU（取引先×区分×入数）ごとの荷造数（発注書「発注書」シートを読み取りのみ）
+//   資材管理アプリの「🔗 発注書から取得（GAS）」（applyLive）が期待する形で返す：
+//     rows   … [{tori,kubun,irisu,funes}]  start〜end の累計c/s
+//     future … [{tori,kubun,irisu,days:[[YYYY-MM-DD,c/s],...]}]  end の翌日以降（在庫切れ予定日の算出用）
+//   ⚠2026-09-24まではここが進捗シートの「荷造数」列見出しを合計した {usage:{...}} を返しており、
+//     applyLiveが期待する rows が無いため画面には必ず「データ形式が想定と違います」が出ていた
+//     （＝広島ではSKU一覧が一度も発注書から更新されず、熊本の雛形のままだった原因）。
+//   ?type=shizaiUsage&start=2026-08-03&end=2026-09-24
 // ============================================================
 function getShizaiUsage_(params){
   params = params || {};
-  var sh = openOrderSheetReadOnly_(CFG.ORDER_PROGRESS_SHEET);
-  if(!sh) return { error: 'シート「' + CFG.ORDER_PROGRESS_SHEET + '」が見つかりません' };
+  var sh = openOrderSheetReadOnly_(CFG.ORDER_MAIN_SHEET);
+  if(!sh) return { error: 'シート「' + CFG.ORDER_MAIN_SHEET + '」が見つかりません' };
   var v = sh.getDataRange().getValues();
+  var nameRow = findOrderNameRow_(v);
+  if(nameRow < 0) return { error: '取引先の見出し行（西暦がある行）が見つかりませんでした' };
   var meta = detectDayColAndHeaderRows_(v);
-  var labels = buildColumnLabels_(v, meta.headerRows, meta.dayCol);
-  var targets = labels.filter(function(lb){ return lb.labelU.indexOf('荷造数') >= 0; });
+  var cols = buildShizaiSkuCols_(v, nameRow);
 
-  var startYmd = parseYmdLoose_(params.start);
-  var endYmd   = parseYmdLoose_(params.end);
-  var sums = {};
-  targets.forEach(function(t){ sums[t.label] = 0; });
+  var start = params.start ? ymdFromParam_(params.start) : '';
+  var end   = params.end   ? ymdFromParam_(params.end)   : todayYmd_();
+  var sums = cols.map(function(){ return 0; });
+  var future = cols.map(function(){ return []; });
+
+  // 発注書は7月始まり＝年をまたぐ。月が戻ったら年を1つ進めて実日付を組み立てる
+  var year = orderFiscalStartYear_();
+  var prevMonth = 0;
   for(var r = meta.headerRows; r < v.length; r++){
     var md = cellMonthDay_(v[r][meta.dayCol]);
     if(!md) continue;
-    if(!inRangeLoose_(md, startYmd, endYmd)) continue;
-    targets.forEach(function(t){
-      var val = Number(v[r][t.c]);
-      if(!isNaN(val)) sums[t.label] += val;
-    });
+    if(prevMonth && md.m < prevMonth) year++;
+    prevMonth = md.m;
+    var ymd = year + '-' + pad2_(md.m) + '-' + pad2_(md.d);
+    var isPast   = (!start || ymd >= start) && ymd <= end;
+    var isFuture = ymd > end;
+    if(!isPast && !isFuture) continue;
+    for(var i = 0; i < cols.length; i++){
+      var q = Number(v[r][cols[i].c]);
+      if(!(q > 0)) continue;
+      if(isPast) sums[i] += q;
+      else if(future[i].length < 120) future[i].push([ymd, q]);
+    }
   }
-  return { start: params.start || '', end: params.end || '', usage: sums };
+
+  var rows = cols.map(function(col, i){
+    return { tori: col.name, kubun: col.kubun, irisu: col.nyusu, funes: sums[i] };
+  });
+  var fut = [];
+  cols.forEach(function(col, i){
+    if(future[i].length) fut.push({ tori: col.name, kubun: col.kubun, irisu: col.nyusu, days: future[i] });
+  });
+  return { asOf: todayYmd_(), start: start, end: end, rows: rows, future: fut };
+}
+// buildOrderCols_ とほぼ同じだが、個人注文・その他サンプルの列も「区分」を落とさずに返す
+//   （資材管理アプリはSKUキーが 取引先|区分|入数 なので、区分が空だと取り込み対象から外れてしまう）
+function buildShizaiSkuCols_(v, nameRow){
+  var kubunRow = nameRow + 1, nyusuRow = nameRow + 2;
+  var cols = [], lastName = '';
+  var width = v[nameRow] ? v[nameRow].length : 0;
+  for(var c = 1; c < width; c++){          // c=1（B列）始まり。ここを2にすると先頭の取引先が丸ごと抜ける
+    var nm = normText_(v[nameRow][c]);
+    if(nm) lastName = nm;
+    var name = lastName;
+    if(!name) continue;
+    if(!NZ_KG_GROUP_RE.test(name) && NZ_EXCLUDE_RE.test(name)) continue;   // 合計・舟数などの集計列を除外
+    var nyusu = Number(v[nyusuRow] ? v[nyusuRow][c] : NaN);
+    if(!(nyusu > 0)) continue;
+    var kubun = normText_(kubunRow < v.length ? v[kubunRow][c] : '');
+    if(kubun === '土なし') kubun = '洗い';        // 発注書の表記ゆれを資材アプリ側の区分に合わせる
+    if(/^[\d.]+$/.test(kubun)) kubun = '';
+    if(!kubun) continue;                          // 区分が無い列は資材アプリが取り込まない
+    cols.push({ c: c, name: name, nyusu: nyusu, kubun: kubun });
+  }
+  return cols;
+}
+function pad2_(n){ return (n < 10 ? '0' : '') + n; }
+function todayYmd_(){ return Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd'); }
+function ymdFromParam_(s){
+  var m = String(s || '').match(/(\d{4})[\/\-](\d{1,2})[\/\-](\d{1,2})/);
+  return m ? (m[1] + '-' + pad2_(Number(m[2])) + '-' + pad2_(Number(m[3]))) : '';
+}
+// 発注書は7月始まり（7月1日〜翌4月）。今日が7月以降ならその年、1〜6月なら前年が年度開始年
+function orderFiscalStartYear_(){
+  var t = new Date();
+  var y = Number(Utilities.formatDate(t, CFG.TZ, 'yyyy'));
+  var m = Number(Utilities.formatDate(t, CFG.TZ, 'M'));
+  return (m >= 7) ? y : (y - 1);
 }
 function parseYmdLoose_(s){
   s = String(s || '').trim();

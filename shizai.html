@@ -249,8 +249,9 @@ code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
 <section id="view-bom" class="view">
   <div class="sec-title">商品×資材 BOM（原単位）</div>
   <div class="hint">「1箱を作るのに、どの資材を何枚使うか」。空欄＝使用なし。個人注文などkg入力のSKUは「換算後の箱数」に対して原単位が掛かります。<br>
+  取引先の一覧は<b>「【広島】発注書2026年度」→「発注書」シートの列</b>と同じ並びです。初期値として<b>「対応する箱 ×1」だけ</b>を入れてあります。
+  <b style="color:var(--danger)">ばんじゅう袋・れんこんシール・ミラマット・片開きシートの原単位は空欄のまま</b>なので、実際の使い方に合わせて入力してください。<br>
   <button class="btn sec small" onclick="bomAutoBox()">📦 一括：各SKUに「箱=1」を仮設定</button>
-  <button class="btn sec small" onclick="bomAutoVac()">🟣 一括：真空区分に「真空袋=1」</button>
   <br><b>シーズン切替（8月頭など）：</b>
   <button class="btn warn small" onclick="swapSeason('toUmai')">🔁 新旨 → 旨 に一括切替</button>
   <button class="btn sec small" onclick="swapSeason('toShinuma')">🔁 旨 → 新旨 に一括切替</button>
@@ -261,7 +262,7 @@ code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
     <div class="field"><label>区分で絞り込み</label>
       <select id="bomKubunFilter" onchange="renderBom()"><option value="">（全区分）</option></select></div>
     <div class="field"><label>取引先で絞り込み</label>
-      <input id="bomToriFilter" placeholder="例：ﾊﾛｰｽﾞ" oninput="renderBom()"></div>
+      <input id="bomToriFilter" placeholder="例：ハローズ" oninput="renderBom()"></div>
   </div>
   <div class="tablewrap"><table id="bomTable"><thead></thead><tbody></tbody></table></div>
 </section>
@@ -416,48 +417,48 @@ code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
 //   ※資材マスタは「R8/8センター関係」タブに載っている資材だけに絞っている
 //     （真空3.34kg・食品シート・真空袋・国内用真空袋(・無地)・海外用真空袋は、このタブに
 //     無いため削除。別タブ「生産関係」で管理されているものと思われる＝必要になれば再確認して追加）
+//   仕入先は棚卸表A列のまま（箱＝広島ｷｮｰﾄﾞｰ／シート類＝ﾄﾚｰﾄﾞ／袋・消耗品＝日野出。2026-09-24追加）
 const SEED_MATERIALS = [
-  ['箱','新旨2kg','枚','',7,0,2,1000],
-  ['箱','新旨3.34kg','枚','',7,215,2,1000],
-  ['箱','旨3.34kg','枚','',7,3220,2,1000],
-  ['箱','2kg','枚','',7,960,2,1000],
-  ['箱','洗い5kg','枚','',7,1325,2,1000],
-  ['箱','土付き5kg','枚','',7,0,2,1000],
-  ['箱','洗い10kg','枚','',7,461,2,1000],
-  ['箱','土付き10kg','枚','',7,0,2,1000],
-  ['その他資材','新旨れんこんシール','枚','',7,20400,1,5000],
-  ['その他資材','旨れんこんシール','枚','',7,0,1,5000],
-  ['その他資材','ばんじゅう袋','枚','',7,4000,1,10000],
-  ['その他資材','ミラマット','枚','',7,0,1,10000],
-  ['その他資材','片開きシート','枚','',7,10400,1,5000],
+  ['箱','新旨2kg','枚','広島ｷｮｰﾄﾞｰ',7,0,2,1000],
+  ['箱','新旨3.34kg','枚','広島ｷｮｰﾄﾞｰ',7,215,2,1000],
+  ['箱','旨3.34kg','枚','広島ｷｮｰﾄﾞｰ',7,3220,2,1000],
+  ['箱','2kg','枚','広島ｷｮｰﾄﾞｰ',7,960,2,1000],
+  ['箱','洗い5kg','枚','広島ｷｮｰﾄﾞｰ',7,1325,2,1000],
+  ['箱','土付き5kg','枚','広島ｷｮｰﾄﾞｰ',7,0,2,1000],
+  ['箱','洗い10kg','枚','広島ｷｮｰﾄﾞｰ',7,461,2,1000],
+  ['箱','土付き10kg','枚','広島ｷｮｰﾄﾞｰ',7,0,2,1000],
+  ['その他資材','新旨れんこんシール','枚','ﾄﾚｰﾄﾞ',7,20400,1,5000],
+  ['その他資材','旨れんこんシール','枚','ﾄﾚｰﾄﾞ',7,0,1,5000],
+  ['その他資材','ばんじゅう袋','枚','日野出',7,4000,1,10000],
+  ['その他資材','ミラマット','枚','日野出',7,0,1,10000],
+  ['その他資材','片開きシート','枚','ﾄﾚｰﾄﾞ',7,10400,1,5000],
 ];
+// 既存データ（localStorage）にも仕入先を後から埋めるための対応表（名前→仕入先）
+const MATERIAL_SUPPLIERS={'新旨2kg':'広島ｷｮｰﾄﾞｰ','新旨3.34kg':'広島ｷｮｰﾄﾞｰ','旨3.34kg':'広島ｷｮｰﾄﾞｰ',
+  '2kg':'広島ｷｮｰﾄﾞｰ','洗い5kg':'広島ｷｮｰﾄﾞｰ','土付き5kg':'広島ｷｮｰﾄﾞｰ','洗い10kg':'広島ｷｮｰﾄﾞｰ','土付き10kg':'広島ｷｮｰﾄﾞｰ',
+  '新旨れんこんシール':'ﾄﾚｰﾄﾞ','旨れんこんシール':'ﾄﾚｰﾄﾞ','片開きシート':'ﾄﾚｰﾄﾞ',
+  'ばんじゅう袋':'日野出','ミラマット':'日野出'};
 // [取引先,区分,入数,exc,kg,boxSize]
+// ★2026-09-24：熊本（センター）の雛形だったSKU一覧を、広島の実データに入れ替え。
+//   出どころ＝「【広島】発注書2026年度」→「発注書」シートの取引先列（24列）。
+//   GASの `?type=debugOrder` の builtCols（builtColsCount=24）と一致させてある＝
+//   「🔄 発注書から取得」で降ってくるSKUキー（取引先|区分|入数）とズレない。
+//   ※発注書の「土なし」はGAS側で「洗い」に正規化されるため、ここでも「洗い」で持つ。
 const SEED_SKUS = [
-  ['ﾊﾛｰｽﾞ','土なし',2],['万代','土なし',2],['ｵｰｹｰ関西','土なし',2],['ｵｰｹｰ','土なし',2],
-  ['ﾊﾛｰｽﾞ','土なし',3.34],['ｵｰｹｰ関西','土なし',3.34],['その他','土なし',3.34],['万代','土なし',3.34],
-  ['ｵｰｹｰ関西','真空',3.34],['関西PC','真空',3.34],['ｵｰｹｰ','真空',3.34],['丸進','真空',3.34],['その他','真空',3.34],
-  ['トレード','下茹で',5,1],['トレード','下茹で',10,1],
-  ['ﾕﾆｵﾝ','洗い',5],['ﾕﾆｵﾝ','土付き',2],['エレナ','Mup',5],['エレナ','S',10],
-  ['足立','洗い',5],['四国青果','洗い',5],['バロー','土付き',5],['バロー','土付き',10],
-  ['イズミヤ阪急オアシス','洗い',2],['イズミヤ阪急オアシス','ﾜﾝﾍﾞｼﾞ',2,1],['イズミヤ阪急オアシス','Mup',5],['イズミヤ阪急オアシス','ﾜﾝﾍﾞｼﾞ',5,1],
-  ['ニシムタ','真空',10],['コストコ','ﾜﾝﾍﾞｼﾞ',15,1],
-  ['カネスエ','土なし',5],['カネスエ','Mup',10],['松源','洗い',5],['松源','ﾋﾟﾛｰ',10],
-  ['関西トライアル','洗い',2],['関西トライアル','Mup',5],['ハローデイ','洗い',2],['ハローデイ','真空',5],
-  ['ｺｰﾌﾟ沖縄','真空',5],['ｺｰﾌﾟ九州','洗い',5],['らでぃっしゅぼーや','洗い',2],['らでぃっしゅぼーや','Mup',5],
-  ['大地を守る会','Mup',5],['協栄産業','洗い',5],['協栄産業','S',10],['マルヨシ','洗い',2],['マルヨシ','Mup',5],
-  ['大治','真空',2],['大治','ﾋﾟﾛｰ',5],['たいらや','真空',5],['西原商会','Mup',5],['いちふじ青果','真空',5],
-  ['サンリブ','洗い',2],['サンリブ','Mup',5],['グアム','真空（海外）',5],['香港','Mup',5],['ｼﾝｶﾞﾎﾟｰﾙ','Mup',5],
-  ['ワタリ','洗い',10],['ワタリ','Mup',5],['横浜市場センター','新芽',2],['横浜市場センター','Mup',5],
-  ['マルマサ','Mup',5],['丸勘山形青果市場','洗い',2],['青柳','真空',2],['青柳','Mup',2],['青柳','Mup',5],
-  ['ホテル日航熊本','真空',2],['ホテル日航熊本','洗い',2],['ホテル日航熊本','Mup',5],
-  ['博多なだ万','洗い',2],['博多なだ万','Mup',5],['東京なだ万','洗い',5],['名古屋なだ万','Mup',2],
-  ['名駅なだ万茶寮','洗い',2],['鮨銀座おのでら','洗い',2],['水辺ﾌﾟﾗｻﾞかもと','土',2],['水辺ﾌﾟﾗｻﾞかもと','Mup',5],
-  ['ユーマートトクナガ','Mup',2],['ユーマートトクナガ','洗い',5],['ｻﾎﾟｰﾚ','洗い',5],
-  ['クローバー','CS',5],['クローバー','CS',10],['小田商店','C',10],['小田商店','S',10],['三ツ和','C',10],
-  ['DAY1','S',10],['ギフト','Mup',1],
-  // 個人注文＝kg入力（サイズで割って箱数換算）。boxSize=箱サイズkg
-  ['個人注文(2kg)','個人',2,0,1,2],['個人注文(5kg)','個人',5,0,1,5],
-  ['その他サンプル','Mup',1,1],
+  ['ハローズ','土付き',3.34],['ハローズ','洗い',3.34],
+  ['万代','洗い',3.34],
+  ['マルヨシ','Mup',2],['マルヨシ','Mup',5],
+  ['MV西日本','Mup',5],['MV西日本','Mup',2],
+  ['サトー','Mup',5],
+  ['広島なだ万','Mup',2],['広島なだ万','Mup',5],
+  ['割烹しんすけ','Mup',5],
+  // 加工用（川上荷役経由）。C＝カット、2S＝スライス
+  ['ｸﾛｰﾊﾞｰ','C',5],['ｸﾛｰﾊﾞｰ','2S',5],['ｸﾛｰﾊﾞｰ','C',10],['ｸﾛｰﾊﾞｰ','2S',10],
+  ['広中食品','C',5],['広中食品','2S',5],['広中食品','C',10],['広中食品','2S',10],
+  // 個人注文は発注書でもc/s（箱数）入力。熊本のようなkg入力ではないので kg フラグは立てない
+  ['個人注文','Mup',2],['個人注文','Mup',5],
+  // その他サンプルは資材の集計対象外（グレー）
+  ['その他サンプル','Mup',1,1],['その他サンプル','C',1,1],['その他サンプル','S',1,1],
 ];
 /* =================== STATE =================== */
 const LS='shizai_app_v2';
@@ -473,7 +474,7 @@ function bunruiTag(k){
 const SEASON={'新旨2kg':['06-01','08-07'],'新旨3.34kg':['06-01','08-07'],'新旨れんこんシール':['06-01','08-07']};
 // 新旨(シーズン初期) ⇄ 旨(通常) の箱・シールの対応。[新旨側, 旨側]
 const SHINUMA_PAIRS=[['新旨2kg','2kg'],['新旨3.34kg','旨3.34kg'],['新旨れんこんシール','旨れんこんシール']];
-// 棚卸2026.8.3の消耗品（発注書に直結しない）。初期データに最初から入れる（＝資材マスタの追加ボタンは廃止）
+// 棚卸2026.9.5（R8/8ｾﾝﾀｰ関係）の消耗品（発注書に直結しない）。初期データに最初から入れる（＝資材マスタの追加ボタンは廃止）
 // alertMode: 'threshold'=残数しきい値 / 'periodic'=定期(N日ごと)
 const EXTRA_MATERIALS=[
   {cat:'消耗品',name:'機械用OPPテープ',unit:'個',supplier:'日野出',initStock:7,alertMode:'threshold',thresholdQty:2},
@@ -502,22 +503,22 @@ function defaultState(){
     initStock:m[5],scrapRate:m[6],minLot:m[7],
     seasonStart:(SEASON[m[1]]||['',''])[0],seasonEnd:(SEASON[m[1]]||['',''])[1],seasonOff:false
   }));
-  // 棚卸8.3の消耗品も最初から入れておく（以前は資材マスタのボタンで後から追加していた）
+  // 棚卸(2026.9.5)の消耗品も最初から入れておく（以前は資材マスタのボタンで後から追加していた）
   EXTRA_MATERIALS.forEach((e,i)=>materials.push(Object.assign({
     id:'MX'+(i+1), leadDays:7, scrapRate:0, minLot:0,
     seasonStart:'', seasonEnd:'', seasonOff:false, periodDays:180, thresholdQty:2
   }, e)));
   const skus=SEED_SKUS.map(s=>({tori:s[0],kubun:s[1],irisu:s[2],exc:!!s[3],
     kg:!!s[4],boxSize:s[5]||s[2],key:skuKey(s[0],s[1],s[2])}));
-  return {materials,skus,boms:{},orders:[],stocktakes:[],funes:{},futureFunes:{},
-    settings:{gasUrl:'',startDate:'2026-08-03',baseDate:todayStr(),safetyDays:30,scrapAlertPct:10,shareOn:false,deviceName:''},
+  return {materials,skus,boms:seedBoms(materials,skus),orders:[],stocktakes:[],funes:{},futureFunes:{},
+    settings:{gasUrl:'',startDate:'2026-09-05',baseDate:todayStr(),safetyDays:30,scrapAlertPct:10,shareOn:false,deviceName:''},
     live:{asOf:null,isLive:false},
     busy:{},
     cloud:{rev:0,savedAt:'',savedBy:''}};
 }
 function todayStr(){const d=new Date();const p=n=>String(n).padStart(2,'0');
   return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());}
-// 広島はまだGASをデプロイしていないため、既定URLは空。設定画面から入力する。
+// 既定のGAS URL（デプロイ済み）。設定画面から変更できる。
 const GAS_URL_DEFAULT='https://script.google.com/macros/s/AKfycbzvyoaRFRlG5LJ30FEoCjwUvhObb6p6jIULlgwWg6sdfTCBF54JbCR5n61Bve7Uktog/exec';
 function load(){ try{S=JSON.parse(localStorage.getItem(LS));}catch(e){} if(!S)S=defaultState();
   S.funes=S.funes||{};S.futureFunes=S.futureFunes||{};S.orders=S.orders||[];S.stocktakes=S.stocktakes||[];S.boms=S.boms||{};S.backups=S.backups||[];S.recounts=S.recounts||[];
@@ -526,6 +527,7 @@ function load(){ try{S=JSON.parse(localStorage.getItem(LS));}catch(e){} if(!S)S=
   S.busy=S.busy||{};                                   // ② 繁忙期の「全資材 再確認」記録（YYYY-MM → {by,at}）
   if(!(S.settings.gasUrl||'').trim()) S.settings.gasUrl=GAS_URL_DEFAULT;   // 未設定なら既定のGASにつなぐ
   migrateV3();
+  migHiroshimaSku();
 }
 function renderGasUrlNote(){
   const el=document.getElementById('gasUrlNote'); if(!el)return;
@@ -547,6 +549,33 @@ function migrateV3(){
       leadDays:7,initStock:0,scrapRate:0,minLot:0,seasonStart:'',seasonEnd:'',seasonOff:false,alertMode:'auto'});
   }
   S.migV3=true;
+  try{ localStorage.setItem(LS,JSON.stringify(S)); }catch(e){}
+}
+// 2026-09-24：SKU（取引先×区分×入数）が熊本（センター）の雛形のままだったのを、
+//   「【広島】発注書2026年度」→「発注書」シートの実際の取引先列に入れ替える。
+//   在庫・発注履歴・棚卸・資材マスタ・使用実績はそのまま残す（消すのはSKUと、そのBOM/荷造数だけ）。
+function migHiroshimaSku(){
+  if(S.migHiroSku)return;
+  const want=SEED_SKUS.map(s=>({tori:s[0],kubun:s[1],irisu:s[2],exc:!!s[3],
+    kg:!!s[4],boxSize:s[5]||s[2],key:skuKey(s[0],s[1],s[2])}));
+  const wantKeys={}; want.forEach(sk=>wantKeys[sk.key]=1);
+  // ① 広島の発注書に無いSKU（＝熊本の雛形）を、BOM・荷造数ごと削除
+  (S.skus||[]).forEach(sk=>{ if(!wantKeys[sk.key]){ delete S.boms[sk.key]; delete S.funes[sk.key]; delete S.futureFunes[sk.key]; } });
+  const keep=(S.skus||[]).filter(sk=>wantKeys[sk.key]);
+  // ② 不足分を追加。並び順も発注書の列順に合わせる（手で直した exc/kg/boxSize は残す）
+  S.skus=want.map(w=>keep.find(k=>k.key===w.key)||w);
+  // ③ BOM未設定のSKUに「対応する箱 ×1」を入れておく（BOM画面で調整可）
+  const seeded=seedBoms(S.materials,S.skus);
+  for(const key in seeded){ if(!S.boms[key]||!Object.keys(S.boms[key]).length) S.boms[key]=seeded[key]; }
+  // ④ 資材マスタの仕入先を棚卸表（R8/8ｾﾝﾀｰ関係）に合わせて補完（空欄のものだけ）
+  (S.materials||[]).forEach(m=>{ if(!(m.supplier||'').trim() && MATERIAL_SUPPLIERS[m.name]) m.supplier=MATERIAL_SUPPLIERS[m.name]; });
+  // ⑤ 広島の発注書に「真空」「ピロー」区分は無いので、どのBOMからも使われていない
+  //    ピローフィルム（migrateV3が熊本流用で足したもの）は在庫が無ければ消す
+  const used={}; for(const k in S.boms){ for(const mid in S.boms[k]) used[mid]=1; }
+  S.materials=(S.materials||[]).filter(m=>!(/ピロー/.test(m.name)&&!used[m.id]&&!Number(m.initStock||0)));
+  // ⑥ 基準日が熊本の棚卸日（2026-08-03）のままなら、広島の棚卸日（R8/8ｾﾝﾀｰ関係＝2026-09-05）に直す
+  if(S.settings && S.settings.startDate==='2026-08-03') S.settings.startDate='2026-09-05';
+  S.migHiroSku=true;
   try{ localStorage.setItem(LS,JSON.stringify(S)); }catch(e){}
 }
 function save(){ localStorage.setItem(LS,JSON.stringify(S)); publishAlerts(); cloudMarkDirty(); }
@@ -1206,16 +1235,26 @@ function bomAutoBox(){
   S.skus.forEach(sk=>{if(sk.exc)return;const b=guessBox(sk);if(b){S.boms[sk.key]=S.boms[sk.key]||{};S.boms[sk.key][b.id]=1;}});
   save();renderBom();recalcAll();
 }
-function guessBox(sk){
-  const boxes=S.materials.filter(m=>m.cat==='箱');const i=String(sk.irisu),k=sk.kubun;
+function guessBox(sk,mats){
+  const boxes=(mats||S.materials).filter(m=>m.cat==='箱');const i=String(sk.irisu),k=sk.kubun;
   const norm=s=>s.replace(/ｋｇ|kg/gi,'');
   let pref=null;
   if(/真空/.test(k))pref='真空'+i;else if(/土付/.test(k))pref='土付き'+i;else if(/洗い|土なし/.test(k))pref='洗い'+i;
   if(pref){const b=boxes.find(m=>norm(m.name)===pref);if(b)return b;}
   let b=boxes.find(m=>norm(m.name)===i);if(b)return b;
   const sized=boxes.filter(m=>norm(m.name).replace(/^(新旨|旨|真空|洗い|土付き)/,'')===i);
-  if(sized.length)return sized.find(m=>/洗い/.test(m.name))||sized[0];
+  // 3.34kgのように「新旨／旨」の2種類しか無いサイズは、通常期の「旨」を既定にする
+  //（新旨はシーズン初期＝季節商品。ここで新旨を選ぶと年中新旨の在庫が減る計算になってしまう）
+  if(sized.length)return sized.find(m=>/洗い/.test(m.name))||sized.find(m=>!/^新旨/.test(m.name))||sized[0];
   return null;
+}
+// 既定のBOM（原単位）：発注書の商品ごとに「対応する箱 ×1」だけを入れる。
+//   シール・ばんじゅう袋・ミラマット・片開きシートの原単位は実際の使い方が拠点ごとに違うため
+//   空のままにしてある（「🔗 商品×資材 BOM」画面で入力してもらう）。
+function seedBoms(materials,skus){
+  const boms={};
+  skus.forEach(sk=>{ if(sk.exc)return; const b=guessBox(sk,materials); if(b){ boms[sk.key]={}; boms[sk.key][b.id]=1; } });
+  return boms;
 }
 function bomAutoVac(){
   const vac=S.materials.find(m=>m.name==='真空袋');if(!vac){alert('真空袋が資材マスタにありません');return;}
@@ -1479,13 +1518,16 @@ function fetchLive(){
   sc.onerror=()=>{alert('取得に失敗しました。URL・デプロイ・共有設定をご確認ください。');sc.remove();delete window[cb];};
   document.body.appendChild(sc);
 }
+// 発注書から降ってきたSKUのうち、資材の集計対象外にするもの（グレー表示）
+//   広島の発注書は全列がc/s（箱数）入力＝熊本のようなkg入力のSKUは無いので kg フラグは常にfalse
+function liveExc(r){ return /ﾜﾝﾍﾞｼﾞ|ワンベジ|サンプル|ｻﾝﾌﾟﾙ|合計|下茹で/.test(String(r.kubun||'')+String(r.tori||'')); }
 function applyLive(data){
-  if(!data||!data.rows){alert('データ形式が想定と違います');return;}
+  if(!data||!data.rows){alert('データ形式が想定と違います。\nGASを新しいバージョンで再デプロイしたかご確認ください。');return;}
   data.rows.forEach(r=>{
     if(!r.kubun||String(r.kubun).trim()==='')return;              // 区分空欄は取り込まない
     const key=skuKey(r.tori,r.kubun,r.irisu);
     if(!S.skus.find(s=>s.key===key))
-      S.skus.push({tori:r.tori,kubun:r.kubun,irisu:r.irisu,exc:/ﾜﾝﾍﾞｼﾞ|サンプル|合計|下茹で/.test(r.kubun+r.tori),kg:/個人/.test(r.tori+r.kubun),boxSize:r.irisu,key});
+      S.skus.push({tori:r.tori,kubun:r.kubun,irisu:r.irisu,exc:liveExc(r),kg:false,boxSize:r.irisu,key});
     S.funes[key]=Number(r.funes||0);
   });
   // 未来の予定荷造数（在庫切れ予定日の算出用）を差し替え
@@ -1494,7 +1536,7 @@ function applyLive(data){
     if(!f.kubun||String(f.kubun).trim()==='')return;
     const key=skuKey(f.tori,f.kubun,f.irisu);
     if(!S.skus.find(s=>s.key===key))
-      S.skus.push({tori:f.tori,kubun:f.kubun,irisu:f.irisu,exc:/ﾜﾝﾍﾞｼﾞ|サンプル|合計|下茹で/.test(f.kubun+f.tori),kg:/個人/.test(f.tori+f.kubun),boxSize:f.irisu,key});
+      S.skus.push({tori:f.tori,kubun:f.kubun,irisu:f.irisu,exc:liveExc(f),kg:false,boxSize:f.irisu,key});
     S.futureFunes[key]=f.days||[];
   });
   S.live={asOf:data.asOf||todayStr(),isLive:true};
@@ -1576,8 +1618,9 @@ function applyCloudState(cloudS,meta){
   S.settings=Object.assign({safetyDays:30,scrapAlertPct:10},S.settings);
   S.settings.gasUrl=g; S.settings.shareOn=on; S.settings.deviceName=dev;
   S.backups=keepBackups;
-  S.funes=S.funes||{};S.orders=S.orders||[];S.stocktakes=S.stocktakes||[];S.boms=S.boms||{};
+  S.funes=S.funes||{};S.futureFunes=S.futureFunes||{};S.orders=S.orders||[];S.stocktakes=S.stocktakes||[];S.boms=S.boms||{};
   S.cloud={rev:Number(meta.rev)||0,savedAt:meta.savedAt||'',savedBy:meta.savedBy||''};
+  migHiroshimaSku();   // クラウド側が熊本の雛形のままでも、読み込んだ時点で広島のSKUに直す
   cloudDirty=false; localStorage.setItem(LS,JSON.stringify(S)); initUI();
   setSyncStatus('🟢 同期中（rev'+S.cloud.rev+' '+(S.cloud.savedAt||'')+(S.cloud.savedBy?(' by '+S.cloud.savedBy):'')+'）','#137333');
 }
