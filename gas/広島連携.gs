@@ -2149,9 +2149,120 @@ function getTodoState_(dateStr){
   }
   return state;
 }
+// ============================================================
+// ⑫-b 頻度による出し分け（2026-09-26追加・曽我さん依頼）
+//   B列「頻度」の書き方から「その日に出すかどうか」を判定する。
+//   ★スプレッドシートの書き方は今まで通りでよい＝日本語の頻度表記をそのまま解釈する。
+//   ★**解釈できない書き方は「毎日出す」**（＝従来どおり）。新しい書き方を足しても
+//     急にTODOが消えない、という安全側の設計にしてある。
+//
+//   | 書き方の例                  | 出る日                     |
+//   |----------------------------|---------------------------|
+//   | （空欄）／毎日／随時         | 毎日                       |
+//   | 平日                        | 月〜金                     |
+//   | 毎週月曜日／月曜／毎週月水    | その曜日だけ                |
+//   | 第4月曜日（毎月）            | 毎月の第4月曜だけ           |
+//   | 第2・第4金曜日               | 第2と第4の金曜だけ          |
+//   | 最終金曜日                   | その月の最後の金曜だけ       |
+//   | 毎月25日／25日               | 毎月25日だけ               |
+//   | 月末                        | その月の最終日だけ          |
+//   | 週1／月1 など（回数だけ）     | 毎日（ラベル扱い・従来どおり）|
+// ============================================================
+var TODO_WDAY_ = { '日':0, '月':1, '火':2, '水':3, '木':4, '金':5, '土':6 };
+
+function todoParseYmd_(s){
+  var m = String(s || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if(!m) return null;
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+function todoNormFreq_(s){
+  return String(s == null ? '' : s)
+    .replace(/[０-９]/g, function(c){ return String.fromCharCode(c.charCodeAt(0) - 0xFEE0); })
+    .replace(/\s|　/g, '')
+    .trim();
+}
+function todoFreqMatches_(freq, dateStr){
+  var s = todoNormFreq_(freq);
+  if(!s) return true;                                   // 空欄＝毎日
+  if(/毎日|日次|随時|都度/.test(s)) return true;
+
+  var d = todoParseYmd_(dateStr);
+  if(!d) return true;                                   // 日付が解釈できない時は出す（安全側）
+  var dow = d.getDay();
+  var dom = d.getDate();
+  var lastDom = new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+
+  // ① 曜日を拾う：「◯曜」の形を最優先（「毎月25日」の“月”を曜日と誤解しないため）
+  var days = [], m;
+  var re1 = /([日月火水木金土])曜/g;
+  while((m = re1.exec(s)) !== null) days.push(TODO_WDAY_[m[1]]);
+  if(!days.length){
+    // 「毎週月水」のように“曜”を省いた書き方も拾う
+    var m2 = s.match(/毎週([日月火水木金土・、,]+)/);
+    if(m2){
+      var chars = m2[1].split('');
+      for(var i = 0; i < chars.length; i++){
+        if(TODO_WDAY_.hasOwnProperty(chars[i])) days.push(TODO_WDAY_[chars[i]]);
+      }
+    }
+  }
+
+  // ② 「第N」を拾う（第2・第4 のように複数可）／「最終・最後」も拾う
+  var nths = [], re2 = /第(\d+)/g;
+  while((m = re2.exec(s)) !== null) nths.push(Number(m[1]));
+  var wantLastWeek = /最終|最後/.test(s);
+
+  // ③ 「◯日」（日にち指定）を拾う。※「第4月曜日」の“日”には数字が前に付かないので拾われない
+  var doms = [], re3 = /(\d+)日/g;
+  while((m = re3.exec(s)) !== null){
+    var n = Number(m[1]);
+    if(n >= 1 && n <= 31) doms.push(n);
+  }
+
+  if(days.length){
+    if(days.indexOf(dow) < 0) return false;
+    if(nths.length){
+      var nth = Math.floor((dom - 1) / 7) + 1;          // その月で何回目のその曜日か
+      return nths.indexOf(nth) >= 0;
+    }
+    if(wantLastWeek) return (dom + 7) > lastDom;        // 同じ曜日が今月もう来ない＝最終
+    return true;                                        // 曜日指定だけ＝毎週その曜日
+  }
+  if(doms.length) return doms.indexOf(dom) >= 0;
+  if(/月末/.test(s)) return dom === lastDom;
+  if(/月初/.test(s)) return dom === 1;
+  if(/平日/.test(s)) return dow >= 1 && dow <= 5;
+
+  return true;   // 「週1」「月1」等の回数ラベル＝解釈しない＝毎日出す（従来どおり）
+}
+
 function getTodoBoard_(dateStr){
   dateStr = String(dateStr || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
-  return { date: dateStr, items: todoMasterList_(), state: getTodoState_(dateStr) };
+  var all = todoMasterList_();
+  var items = [];
+  for(var i = 0; i < all.length; i++){
+    if(todoFreqMatches_(all[i].freq, dateStr)) items.push(all[i]);
+  }
+  // masterCount＝マスタの総件数。フロントは「マスタが空」と「本日は該当なし」を
+  // これで区別してメッセージを出し分ける。
+  return { date: dateStr, items: items, masterCount: all.length, state: getTodoState_(dateStr) };
+}
+// 頻度の書き方が意図どおり解釈されているか、1週間ぶん並べて確認する（エディタから▶実行）
+function testTodoFreq(){
+  var all = todoMasterList_();
+  var base = new Date();
+  var lines = [];
+  for(var i = 0; i < 14; i++){
+    var d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i);
+    var ds = Utilities.formatDate(d, CFG.TZ, 'yyyy-MM-dd');
+    var wd = ['日','月','火','水','木','金','土'][d.getDay()];
+    var hit = [];
+    for(var j = 0; j < all.length; j++){
+      if(todoFreqMatches_(all[j].freq, ds)) hit.push(all[j].task);
+    }
+    lines.push(ds + '(' + wd + ')  ' + (hit.length ? hit.join(' / ') : '―'));
+  }
+  Logger.log(lines.join('\n'));
 }
 function todoLogAppend_(body){
   var lock = LockService.getScriptLock();

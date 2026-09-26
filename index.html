@@ -1196,7 +1196,8 @@
      「【広島】電子黒板データ」の『広島TODOマスタ』シート（A=業務／B=頻度）に行を足すだけで
      ここに出る（GAS再デプロイ不要）。チェックはその場で見た目が変わり、GASの『TODO履歴』へ
      1行追記される（上書きしない＝誰がいつ押したかが残る）。状態は履歴の最新行から組み立てる。 */
-  var TODO_MASTER = [];
+  var TODO_MASTER = [];        // 本日出すぶんだけ（GAS側が頻度で絞り込んで返す）
+  var TODO_MASTER_COUNT = 0;   // マスタの総件数（「本日は該当なし」と「マスタが空」を区別するため）
   var TODO_STATE  = {};
   var _todoPending = 0;   // 送信中の件数（>0の間はbundleからの状態上書きを止める＝自分の操作を潰さない）
   function todoLocalKey_(){ return 'hb_todo_' + todayStr_(); }
@@ -1210,7 +1211,10 @@
     if(!TODO_MASTER) TODO_MASTER = [];
     if(!TODO_STATE)  TODO_STATE = {};
     if(!TODO_MASTER.length){
-      box.innerHTML = '<div class="todo-empty">TODOがまだ登録されていません。<br>「【広島】電子黒板データ」スプレッドシートの<b>「広島TODOマスタ」</b>シートに、A列＝業務／B列＝頻度（毎日・週1 など）を書き足すとここに出ます。</div>';
+      // マスタ自体が空なのか、マスタはあるが「本日は該当なし」なのかを区別して出す
+      box.innerHTML = TODO_MASTER_COUNT
+        ? '<div class="todo-empty">本日やるTODOはありません。<br><span style="font-size:11px;">（「広島TODOマスタ」の頻度欄から、その日に出すものだけを表示しています）</span></div>'
+        : '<div class="todo-empty">TODOがまだ登録されていません。<br>「【広島】電子黒板データ」スプレッドシートの<b>「広島TODOマスタ」</b>シートに、A列＝業務／B列＝頻度（毎日・毎週月曜日・第4月曜日・毎月25日 など）を書き足すとここに出ます。</div>';
       return;
     }
     box.innerHTML = '';
@@ -1237,6 +1241,7 @@
   function todoApply_(d){
     if(!d || d.error) return;
     if(Array.isArray(d.items)) TODO_MASTER = d.items;
+    if(typeof d.masterCount === 'number') TODO_MASTER_COUNT = d.masterCount;
     if(d.state && !_todoPending){ TODO_STATE = d.state; todoSaveLocal_(); }
     todoRender_();
   }
