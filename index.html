@@ -735,9 +735,10 @@
       cards.push({ lbl: '本日の荷造り舟数', val: (defaultFune != null ? defaultFune : '―'), u: '舟', sub: sub });
     }
 
-    // ② 荷造り予定㎏（本日の注文一覧の合計。発注書シートより）
+    // ② 荷造り予定㎏＝本日の荷造り舟数 × 50㎏（2026-09-29変更・曽我さん指定。旧：本日の注文一覧の合計）
+    var planFune = nzDefaultTargetFunes_();
+    cards.push({ lbl: '荷造り予定㎏', val: (planFune != null ? Math.round(planFune * 50) : '―'), u: 'kg', sub: '本日の荷造り舟数 × 50kg' });
     if(LAST_NIZUKURI && !LAST_NIZUKURI.error){
-      cards.push({ lbl: '荷造り予定㎏', val: LAST_NIZUKURI.totalKg || 0, u: 'kg', sub: '本日の注文一覧の合計' });
       // ⑦ 終了目標時刻＝本日の合計数量（数量変更で上書き可）÷（出勤人数×2舟/時）
       var ft = LAST_NIZUKURI.finishTime || (LAST_NIZUKURI.targetFunes ? '本日中は厳しい見込み' : '―');
       cards.push({ lbl: '終了目標時刻', val: ft, sub: '本日の合計数量 ÷（出勤人数×2舟/時）' });
@@ -1793,7 +1794,8 @@
       ((d && !d.error && d.orders) || []).forEach(function(o){
         if(o.unit === 'kg') return;   // 個人注文・その他サンプル(kg単位)は進捗シート側に対応する行が無いため対象外
         if(o.isCS) return;            // 区分C/Sは対象外
-        if(o.kojin) return;           // 個人注文（2026-09-29にc/s行へ変更）も従来どおり対象外
+        // 個人注文（c/s行・kojin）は2026-09-29に手入力へ戻したため比較対象に含める
+        //   （進捗シートにも「個人注文」の荷造数がある。除外すると進捗側だけが差分として残る）
         if(seenKeys[o.key]) return; seenKeys[o.key] = 1;
         var made = Number(o.madeToday) || 0;
         if(!made) return;
