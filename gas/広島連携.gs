@@ -908,7 +908,7 @@ function nzMadeSave_(body){
   } finally { try{ lock.releaseLock(); }catch(e){} }
 }
 
-// ---- ② 個人注文の「本日作った分」自動記入（2026-09-29追加・曽我さん依頼） ----
+// ---- ② 個人注文の「本日作った分」自動記入（2026-09-29追加・同日中に停止＝現在どこからも呼ばれていない） ----
 //   個人注文は発注書に入力された時点で既に作ってある＝他の注文のように黒板で「本日」欄を入れる運用ではない。
 //   生産ログ（DATA_SS_ID内。発注書には書かない）の合計が注文数とずれていたら、差を1日ぶんの行に寄せて合わせる。
 //     ・生産日＝実際の今日（初めて黒板が見つけた日＝入力された日）。ただし納品日が今日より前の注文は納品日
@@ -1019,14 +1019,15 @@ function getNizukuriFull_(params){
   var orders = base.orders.map(function(o){
     var key = nzOrderKey_(date, o);
     var log = logMap[key] || {};
-    if(o.kojin) log = nzAutoMadeKojin_(date, o, log, todayReal);
+    // 個人注文の自動記入（nzAutoMadeKojin_）は2026-09-29に停止（曽我さん依頼）：
+    //   発注書の入力日と実際に作った日がずれるため、他の注文と同じく「本日」欄を手入力する運用に戻した。
     var madeToday = Number(log[todayReal]) || 0;
     var madeTotal = 0; Object.keys(log).forEach(function(d){ madeTotal += Number(log[d]) || 0; });
     var madePrev = madeTotal - madeToday;
     var totalQty = Math.round(o.qty || 0);
     return {
       cust: o.cust, kubun: o.kubun, nyusu: o.nyusu, qty: o.qty, kg: o.kg, unit: o.unit,
-      key: key, state: state.status[key] || (o.kojin ? 'sakusei' : 'mikettei'),
+      key: key, state: state.status[key] || 'mikettei',
       kojin: !!o.kojin,
       madePrev: madePrev, madeToday: madeToday, rest: totalQty - madePrev - madeToday,
       prodLog: log,   // 生産日ごとの内訳（累計修正UIのツールチップ・日付選択時のプリフィルに使用。読み取りのみ）
