@@ -789,7 +789,41 @@ function publishAlerts(){
       stocktake:{month:st.month,done:st.done,due:st.due},
       appUrl:location.href.split('#')[0]
     }));
+    boardAlertsPush(a,st);
   }catch(e){}
+}
+// ⑤ 電子黒板へアラートを届ける（2026-09-29追加）。画面上部の「要対応」帯と同じ内容を文字だけにしてGASへ送る。
+//   ・共有（ほかのPCと同期）がオンで、クラウドの最新を読み込み済みのPCからだけ送る（古い手元データで上書きしないため）
+//   ・内容が変わった時／日付が変わった時／前回から30分以上たった時だけ送る（毎回は送らない）
+var boardAlertsLast='', boardAlertsLastAt=0, boardAlertsFailAt=0, boardAlertsTimer=null, boardCloudFresh=false;   // boardCloudFresh＝このPCがクラウドの最新と一致していると確認できたか
+function boardAlertItems(a,st){
+  const items=[];
+  if(busyDueNow()&&!busyIsDone(busyKeyNow())) items.push({kind:'busy',text:'⚠️ 繁忙期に備えよう（'+busyLabelNow()+'）― 全ての資材の在庫を再確認'});
+  if(st.due) items.push({kind:'stock',text:'📋 月末棚卸が未入力です（'+st.month+'）'});
+  a.reorder.forEach(r=>items.push({kind:'reorder',text:'🛒 '+r.name+'（'+(r.cover?('あと'+(r.cover.have!=null?fmt(r.cover.have):'0')+'日分 ＜ 基準'+fmt(r.cover.days)+'日分'):(r.threshold!=null?'残り '+fmt(r.stock)+' ≤ しきい値 '+fmt(r.threshold):(r.runoutDate?'在庫 '+fmt(r.stock)+' ／ 切れ予定 '+r.runoutDate.slice(5)+'（あと'+fmt(r.runoutDays)+'日）':'在庫 '+fmt(r.stock)+(r.days!=null?' ／ あと'+r.days+'日':''))))+'）発注推奨'}));
+  a.deliver.filter(d=>d.dueReached).forEach(d=>items.push({kind:'deliver',text:'🚚 '+d.name+' 納品予定（'+(d.due||'')+'）'+(d.late?' ※遅延':'')}));
+  a.periodic.forEach(p=>items.push({kind:'periodic',text:'🔔 '+p.name+' 定期チェック時期（毎'+p.days+'日）'}));
+  a.scrap.forEach(s=>items.push({kind:'scrap',text:'🗑 '+s.name+' 破棄率高い（'+fmt1(s.rate)+'%）理由未記入'}));
+  a.rows.forEach(r=>{
+    if(r.suggest==='off') items.push({kind:'season',text:'🕒 '+r.m.name+' はそろそろ季節終わり（季節外にする）'});
+    if(r.suggest==='on')  items.push({kind:'season',text:'🌱 '+r.m.name+' のシーズンです（シーズンに戻す）'});
+    if(r.switchDue){const nx=r.m.nextMatId?matById(r.m.nextMatId):null;
+    items.push({kind:'switch',text:'🔁 '+r.m.name+' 切替時期'+(r.switchReason?'（'+r.switchReason+'）':'')+(nx?' → '+nx.name+'へ':'')});} });
+  return items;
+}
+function boardAlertsPush(a,st){
+  if(!shareEnabled() || !boardCloudFresh || cloudDirty) return;
+  const items=boardAlertItems(a,st);
+  const sig=todayStr()+'|'+JSON.stringify(items);
+  if(sig===boardAlertsLast && (Date.now()-boardAlertsLastAt)<30*60*1000) return;
+  if(Date.now()-boardAlertsFailAt<5*60*1000) return;   // 送信に失敗した直後（GAS未更新など）は5分あけて再送
+  clearTimeout(boardAlertsTimer);
+  boardAlertsTimer=setTimeout(()=>{
+    const url=(S.settings.gasUrl||'').trim(); if(!url) return;
+    fetch(url,{method:'POST',body:JSON.stringify({action:'shizaiAlertsPublish',items,asOf:todayStr(),by:S.settings.deviceName||''})})
+      .then(r=>r.json()).then(res=>{ if(res&&res.ok){ boardAlertsLast=sig; boardAlertsLastAt=Date.now(); } else boardAlertsFailAt=Date.now(); })
+      .catch(()=>{ boardAlertsFailAt=Date.now(); });
+  },3000);
 }
 
 /* =================== RENDER =================== */
@@ -1621,7 +1655,7 @@ function applyCloudState(cloudS,meta){
   S.funes=S.funes||{};S.futureFunes=S.futureFunes||{};S.orders=S.orders||[];S.stocktakes=S.stocktakes||[];S.boms=S.boms||{};
   S.cloud={rev:Number(meta.rev)||0,savedAt:meta.savedAt||'',savedBy:meta.savedBy||''};
   migHiroshimaSku();   // クラウド側が熊本の雛形のままでも、読み込んだ時点で広島のSKUに直す
-  cloudDirty=false; localStorage.setItem(LS,JSON.stringify(S)); initUI();
+  cloudDirty=false; boardCloudFresh=true; localStorage.setItem(LS,JSON.stringify(S)); initUI();
   setSyncStatus('🟢 同期中（rev'+S.cloud.rev+' '+(S.cloud.savedAt||'')+(S.cloud.savedBy?(' by '+S.cloud.savedBy):'')+'）','#137333');
 }
 // 編集があったら少し待って自動送信
@@ -1640,7 +1674,7 @@ function cloudPush(force,onDone){
       cloudBusy=false;
       if(res.ok){ S.cloud.rev=res.rev; S.cloud.savedAt=res.savedAt||''; S.cloud.savedBy=S.settings.deviceName||'';
         cloudDirty=false; localStorage.setItem(LS,JSON.stringify(S));
-        setSyncStatus('🟢 保存済み（rev'+res.rev+' '+(res.savedAt||'')+'）','#137333'); onDone&&onDone(true); }
+        setSyncStatus('🟢 保存済み（rev'+res.rev+' '+(res.savedAt||'')+'）','#137333'); boardCloudFresh=true; publishAlerts(); onDone&&onDone(true); }
       else if(res.conflict){ showConflict(res); onDone&&onDone(false); }
       else { setSyncStatus('保存エラー：'+(res.error||'不明'),'#d9534f'); onDone&&onDone(false); }
     })
@@ -1676,6 +1710,7 @@ function startCloudPoll(){ clearInterval(cloudPollTimer);
         if(cloudDirty) showConflict({savedBy:m.savedBy,savedAt:m.savedAt,rev:rev});  // 自分も未送信 → 競合
         else cloudPullFull(()=>setSyncStatus('🔄 他のPCの更新を反映しました','#137333'));
       }
+      else if(rev===S.cloud.rev && !cloudDirty){ boardCloudFresh=true; publishAlerts(); }   // ⑤ 開きっぱなしでも30分おきに黒板のアラートを更新
     },()=>{});
   },20000);
 }

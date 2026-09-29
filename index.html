@@ -308,6 +308,10 @@
   .fn-cell{ border:2px solid var(--text-primary); border-radius:8px; overflow:hidden; min-width:180px; flex:1; }
   .fn-cell .ch{ font-size:14px; font-weight:800; text-align:center; padding:6px 12px; border-bottom:2px solid var(--text-primary); background:var(--surface-0); white-space:nowrap; }
   .fn-cell .cv{ text-align:center; font-size:40px; font-weight:900; font-variant-numeric:tabular-nums; padding:10px 6px; background:var(--surface-1); }
+  .fn-cell .cv input{ width:100%; box-sizing:border-box; border:none; background:transparent; text-align:center; font:inherit; font-size:inherit; font-weight:900; color:inherit; padding:0; -moz-appearance:textfield; }
+  .fn-cell .cv input::-webkit-outer-spin-button, .fn-cell .cv input::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+  .fn-cell .cv input:focus{ outline:3px solid var(--blue); border-radius:4px; background:#fff; }
+  .fn-cell.stock .ch{ background:#bdd7ee; }
   .fn-cell .edit-mark{ display:block; font-size:11px; font-weight:800; color:var(--text-secondary); margin-top:-6px; padding-bottom:6px; text-align:center; background:var(--surface-1); }
   .fn-foot{ display:flex; align-items:center; gap:14px; margin-top:18px; font-size:12px; color:var(--muted); font-weight:700; flex-wrap:wrap; }
   .fn-foot .fn-status{ margin-left:auto; }
@@ -370,16 +374,16 @@
       <div id="md-news"><div class="news-empty">読み込み中…</div></div>
     </div>
     <div class="card">
-      <h3>✅ TODO <span class="tag">広島TODOマスタより</span></h3>
+      <h3>✅ TODO <span class="tag">広島TODOマスタ＋カレンダー【広島】</span></h3>
       <div class="todo-tabs"><span class="active">本日</span></div>
       <div id="todo-list"><div class="todo-empty">読み込み中…</div></div>
     </div>
   </div>
 
   <div class="card">
-    <h3>🧰 資材の要確認</h3>
+    <h3>🧰 資材の要確認 <span class="tag" id="shizai-alerts-asof">資材管理アプリより</span> <a href="shizai.html" target="_blank" rel="noopener" style="font-size:12px;margin-left:8px;">資材管理アプリを開く ↗</a></h3>
     <div id="shizai-alerts-box" class="warn-box" style="display:none;"></div>
-    <div class="empty-note" id="shizai-alerts-empty">現在、しきい値を下回っている資材はありません（しきい値方式のみの簡易チェックです。定期チェック等は資材管理アプリでご確認ください）。</div>
+    <div class="empty-note" id="shizai-alerts-empty">✅ 資材のアラートはありません。</div>
   </div>
 
   <div class="foot-note">※ 数字は発注書スプレッドシート「進捗」「発注書」シートを読み取り専用で表示しているだけです。発注書スプレッドシートには一切書き込みません。</div>
@@ -529,13 +533,15 @@
       <div class="fn-rest" id="fn-rest">のこり <b id="fn-rest-n">--</b> 舟</div>
     </div>
     <div class="fn-calc">
+      <div class="fn-cell stock"><div class="ch">📦 前日ストック</div><div class="cv"><input id="fn-prev-input" type="number" min="0" step="1" inputmode="numeric" onchange="fnPrevStockCommit(this)" onkeydown="if(event.key==='Enter')this.blur();"></div><span class="edit-mark" id="fn-prev-mark">発注書の前日ｽﾄｯｸ舟数から自動</span></div>
+      <div class="fn-op">＋</div>
       <div class="fn-cell hori"><div class="ch">🚜 圃場（畑）</div><div class="cv"><span id="fn-hori">0</span></div><span class="edit-mark">圃場タブから自動</span></div>
       <div class="fn-op">＋</div>
       <div class="fn-cell sei"><div class="ch">🧑‍🌾 生産者</div><div class="cv"><span id="fn-sei">0</span></div><span class="edit-mark">生産者タブから自動</span></div>
     </div>
     <div class="fn-foot">
       <button class="haichi-btn sub" onclick="fnKiosk(true)">⛶ 大画面モード（ヘッダーとタブを隠す）</button>
-      <span>本日目標舟数＝本日の合計数量（本日荷造りの数量変更で上書き可）／現在合計舟数＝圃場＋生産者</span>
+      <span>本日目標舟数＝本日の荷造り舟数（収穫＋前日ｽﾄｯｸ−本日ｽﾄｯｸ＋生産者。数量変更で上書き可）／現在合計舟数＝前日ストック＋圃場＋生産者。前日ストックは数字をタップして直せます（空にすると発注書の値に戻ります）</span>
       <span class="fn-status" id="fn-status"></span>
     </div>
   </div>
@@ -688,11 +694,22 @@
   // ①本日の荷造り舟数の既定値＝発注書の荷造り舟数＋生産者タブの収穫舟数合計。
   //   電子黒板のタイル・本日の合計数量（数量変更の既定に戻す）・終了目標時刻の計算元をこの1つにそろえる。
   //   発注書の荷造り舟数が未取得の間はnullを返す（既定に戻す操作では0扱いにする）。
+  //   2026-09-29〜 式を変更（曽我さん指定）：
+  //     本日の荷造り舟数＝収穫舟数＋前日ｽﾄｯｸ舟数−本日ｽﾄｯｸ舟数＋生産者タブの収穫舟数
+  //   発注書側の3項（収穫＋前日ｽﾄｯｸ−本日ｽﾄｯｸ）はGASが nizukuriFunesBase として返す。
+  //   旧GAS（nizukuriFunesBaseを返さない）の間は、従来どおり発注書の荷造り舟数列を使う。
   function nzDefaultTargetFunes_(){
-    var mstats = (LAST_MAINSTATS && !LAST_MAINSTATS.error && LAST_MAINSTATS.stats) ? LAST_MAINSTATS.stats : {};
+    var ms = (LAST_MAINSTATS && !LAST_MAINSTATS.error) ? LAST_MAINSTATS : null;
+    var mstats = (ms && ms.stats) ? ms.stats : {};
     var seiFune = (LAST_SEISAN && LAST_SEISAN.totalFunes) ? Number(LAST_SEISAN.totalFunes) : 0;
+    if(ms && typeof ms.nizukuriFunesBase === 'number') return ms.nizukuriFunesBase + seiFune;
     if(!('荷造り舟数' in mstats) || mstats['荷造り舟数'] === '') return null;
     return (Number(mstats['荷造り舟数']) || 0) + seiFune;
+  }
+  // 前日ｽﾄｯｸ舟数（舟数モニター用）：発注書の前日行の値、または舟数モニターでの当日上書き
+  function fnPrevStock_(){
+    var ms = (LAST_MAINSTATS && !LAST_MAINSTATS.error) ? LAST_MAINSTATS : null;
+    return (ms && typeof ms.prevStock === 'number') ? ms.prevStock : null;
   }
 
   // ①②③ 本日の予測・予定（本日出勤人数・荷造り舟数・荷造り予定㎏・終了目標時刻）をまとめて表示
@@ -707,9 +724,15 @@
 
     var mstats = (LAST_MAINSTATS && !LAST_MAINSTATS.error && LAST_MAINSTATS.stats) ? LAST_MAINSTATS.stats : {};
     // ① 本日の荷造り舟数＝発注書の荷造り舟数（予定）＋生産者タブの収穫舟数合計
-    if('荷造り舟数' in mstats){
+    if('荷造り舟数' in mstats || '収穫舟数' in mstats){
       var defaultFune = nzDefaultTargetFunes_();
-      cards.push({ lbl: '本日の荷造り舟数', val: (defaultFune != null ? defaultFune : '―'), u: '舟', sub: '発注書の荷造り舟数 + 生産者タブの収穫舟数' });
+      var sub = '発注書の荷造り舟数 + 生産者タブの収穫舟数';
+      if(typeof LAST_MAINSTATS.nizukuriFunesBase === 'number'){
+        var seiF = (LAST_SEISAN && LAST_SEISAN.totalFunes) ? Number(LAST_SEISAN.totalFunes) : 0;
+        sub = '収穫' + fnNum_(LAST_MAINSTATS.harvest) + ' ＋ 前日ｽﾄｯｸ' + fnNum_(LAST_MAINSTATS.prevStock) +
+              ' − 本日ｽﾄｯｸ' + fnNum_(LAST_MAINSTATS.todayStock) + ' ＋ 生産者' + fnNum_(seiF);
+      }
+      cards.push({ lbl: '本日の荷造り舟数', val: (defaultFune != null ? defaultFune : '―'), u: '舟', sub: sub });
     }
 
     // ② 荷造り予定㎏（本日の注文一覧の合計。発注書シートより）
@@ -776,14 +799,15 @@
     return '<div class="nz-row' + (o.state === 'sakusei' ? ' is-done' : '') + (o.isNew ? ' is-new' : '') + '">' +
       '<div class="nz-r1">' +
         '<div class="idx">' + (idx + 1) + '</div>' +
-        '<div class="cust">' + escHtml_(o.cust) + (o.kubun ? '<span class="bunrui ' + nzBunruiClass_(o.kubun) + '">' + escHtml_(o.kubun) + '</span>' : '') + (isKg ? '<span class="bunrui b-kg">kg</span>' : '') + (o.isNew ? '<span class="new-flag">NEW</span>' : '') + '</div>' +
+        '<div class="cust">' + escHtml_(o.cust) + (o.kubun ? '<span class="bunrui ' + nzBunruiClass_(o.kubun) + '">' + escHtml_(o.kubun) + '</span>' : '') + (isKg ? '<span class="bunrui b-kg">kg</span>' : '') + (o.kojin ? '<span class="bunrui b-kg" title="個人注文は発注書に入力された時点で作ってあるので、自動で「本日作った分」になります">入力＝作成済み</span>' : '') + (o.isNew ? '<span class="new-flag">NEW</span>' : '') + '</div>' +
         '<div class="nyusu">' + (isKg ? '<small>kgで入力</small>' : (o.nyusu ? '入数 ' + escHtml_(String(o.nyusu)) : '<small>入数 —</small>')) + '</div>' +
         '<button class="nz-status" data-st="' + o.state + '" onclick="nzStateCycle(\'' + escAttr_(o.key) + '\')">' + nzStateMark_(o.state) + ' ' + escHtml_(nzStateLabel_(o.state)) + '</button>' +
       '</div>' +
       '<div class="qc4">' +
         '<div class="qi total"><span class="ql">合計</span><span class="cs">' + escHtml_(String(Math.round(o.qty || 0))) + '<small>' + U + '</small></span></div>' +
         '<div class="qi prev"><span class="ql">累計</span><span class="cs prev-v" title="' + escAttr_(nzPrevTooltipText_(o)) + '">' + escHtml_(String(o.madePrev || 0)) + '<small>' + U + '</small></span><button type="button" class="prev-edit-btn" onclick="nzPrevFixToggle(this)">✎ 直す</button></div>' +
-        '<div class="qi made"><span class="ql">本日</span><input class="q-made" type="number" min="0" step="1" value="' + (o.madeToday || '') + '" data-key="' + escAttr_(o.key) + '" oninput="nzMadeInput(this)" onchange="nzMadeCommit(this)"></div>' +
+        '<div class="qi made"><span class="ql">本日' + (o.kojin ? '（自動）' : '') + '</span><input class="q-made" type="number" min="0" step="1" value="' + (o.madeToday || '') + '" data-key="' + escAttr_(o.key) + '"' +
+          (o.kojin ? ' readonly title="個人注文は発注書の数量がそのまま入ります（直す時は発注書の数量を直してください）"' : ' oninput="nzMadeInput(this)" onchange="nzMadeCommit(this)"') + '></div>' +
         '<div class="qi rest' + (o.rest <= 0 ? ' done' : '') + '"><span class="ql">のこり</span><span class="cs rest-v">' + escHtml_(String(o.rest)) + '<small>' + U + '</small></span></div>' +
       '</div>' +
       '<div class="prev-fix" style="display:none;">' +
@@ -1005,10 +1029,27 @@
     }
   }
 
-  // ④ 資材の要確認アラート（しきい値方式のみの簡易版）
+  // ④⑤ 資材の要確認アラート。資材管理アプリ本体が計算した「要対応」一覧（published）を優先して出す
+  //   （2026-09-29〜。資材アプリの画面上部の赤い帯と同じ内容）。まだ一度も届いていない時だけ、
+  //   従来のしきい値方式の簡易チェック（alerts）を出す。
   function renderShizaiAlerts_(data){
     var box = document.getElementById('shizai-alerts-box');
     var empty = document.getElementById('shizai-alerts-empty');
+    var asof = document.getElementById('shizai-alerts-asof');
+    var pub = data && data.published;
+    if(pub && Array.isArray(pub.items)){
+      if(asof){
+        var stale = pub.asOf && pub.asOf < todayStr_();
+        asof.textContent = '資材管理アプリ ' + String(pub.at || '').slice(5).replace('-', '/') + ' 時点' + (stale ? '（今日はまだ資材アプリが開かれていません）' : '');
+        asof.style.background = stale ? '#fff4e0' : '';
+      }
+      if(!pub.items.length){ box.style.display = 'none'; empty.style.display = 'block'; return; }
+      empty.style.display = 'none';
+      box.style.display = 'block';
+      box.innerHTML = pub.items.map(function(it){ return escHtml_(it.text); }).join('<br>');
+      return;
+    }
+    if(asof) asof.textContent = '資材管理アプリより（簡易チェック）';
     if(!data || data.error || !data.alerts || !data.alerts.length){
       box.style.display = 'none'; empty.style.display = 'block';
       return;
@@ -1752,6 +1793,7 @@
       ((d && !d.error && d.orders) || []).forEach(function(o){
         if(o.unit === 'kg') return;   // 個人注文・その他サンプル(kg単位)は進捗シート側に対応する行が無いため対象外
         if(o.isCS) return;            // 区分C/Sは対象外
+        if(o.kojin) return;           // 個人注文（2026-09-29にc/s行へ変更）も従来どおり対象外
         if(seenKeys[o.key]) return; seenKeys[o.key] = 1;
         var made = Number(o.madeToday) || 0;
         if(!made) return;
@@ -1883,15 +1925,27 @@
     }, 700);
   }
 
-  /* ===== 舟数モニター（もう1台の液晶用。センター電子黒板の簡易版＝前日ストック等の手入力欄は省略） =====
-     目標舟数＝本日荷造りの合計数量（数量変更で上書き可）／現在合計舟数＝圃場（畑）＋生産者（自動）。
+  /* ===== 舟数モニター（もう1台の液晶用。センター電子黒板の簡易版。2026-09-29に前日ストック〈発注書の前日ｽﾄｯｸ舟数・手入力で上書き可〉を追加） =====
+     目標舟数＝本日荷造りの合計数量（数量変更で上書き可）／現在合計舟数＝前日ストック＋圃場（畑）＋生産者。
      bundleの30秒ポーリング（loadBundle_）で LAST_HOJO/LAST_SEISAN/LAST_NIZUKURI が更新されるたびに再計算する。 */
   function fnNum_(n){ return Number(n||0).toLocaleString('ja-JP'); }
   function fnRender(){
     if(!document.getElementById('fn-now')) return;
     var hori = (LAST_HOJO && LAST_HOJO.total) ? Number(LAST_HOJO.total) : 0;
     var sei  = (LAST_SEISAN && LAST_SEISAN.totalFunes) ? Number(LAST_SEISAN.totalFunes) : 0;
-    var now  = hori + sei;
+    var prev = fnPrevStock_();
+    var now  = (prev || 0) + hori + sei;
+    // 前日ストック（入力中は書き換えない＝打っている数字が30秒ポーリングで消えないように）
+    var pin = document.getElementById('fn-prev-input');
+    if(pin && document.activeElement !== pin && !_fnPrevPending) pin.value = (prev != null) ? prev : '';
+    var pmark = document.getElementById('fn-prev-mark');
+    if(pmark && LAST_MAINSTATS && !LAST_MAINSTATS.error){
+      var ov = LAST_MAINSTATS.prevStockOverride;
+      var pd = String(LAST_MAINSTATS.prevStockDate || '').slice(5).replace('-', '/');
+      pmark.textContent = (typeof ov === 'number')
+        ? ('✎ 手入力（発注書' + (pd ? pd : '') + 'は ' + fnNum_(LAST_MAINSTATS.prevStockAuto || 0) + '）')
+        : ('発注書 ' + (pd || '前日') + ' のｽﾄｯｸ舟数から自動');
+    }
     var tgtSet = !!(LAST_NIZUKURI && !LAST_NIZUKURI.error && LAST_NIZUKURI.targetFunes != null);
     var tgt = tgtSet ? Number(LAST_NIZUKURI.targetFunes) : 0;
 
@@ -1916,6 +1970,27 @@
     }
     var st = document.getElementById('fn-status');
     if(st){ var t=new Date(); st.textContent = '更新 ' + ('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2); }
+  }
+  // 前日ストックの当日上書き（空欄＝発注書の値に戻す）。全PC共有（GAS側に日付ごと保存）。
+  var _fnPrevPending = 0;
+  function fnPrevStockCommit(inp){
+    var raw = String(inp.value).trim();
+    var val = (raw === '') ? null : Math.max(0, Math.round(Number(raw) || 0));
+    if(LAST_MAINSTATS && !LAST_MAINSTATS.error){
+      LAST_MAINSTATS.prevStockOverride = val;
+      LAST_MAINSTATS.prevStock = (val != null) ? val : (LAST_MAINSTATS.prevStockAuto || 0);
+      if(typeof LAST_MAINSTATS.harvest === 'number'){
+        LAST_MAINSTATS.nizukuriFunesBase = LAST_MAINSTATS.harvest + LAST_MAINSTATS.prevStock - (LAST_MAINSTATS.todayStock || 0);
+      }
+      if(LAST_NIZUKURI && LAST_NIZUKURI.targetOverride == null){
+        var dt = nzDefaultTargetFunes_(); if(dt != null) LAST_NIZUKURI.targetFunes = dt;
+      }
+    }
+    renderMainStats_(); if(LAST_NIZUKURI) nzRenderQtyBar_(LAST_NIZUKURI); fnRender();
+    _fnPrevPending++;
+    gasPost_('prevStockSave', { date: todayStr_(), value: val, by: deviceLabel_() }, function(){
+      _fnPrevPending = Math.max(0, _fnPrevPending - 1);
+    });
   }
   function fnOnOpen(){
     hojoInit();     // 圃場・生産者は開いていなくても読み込む（現在合計舟数の計算に必要）

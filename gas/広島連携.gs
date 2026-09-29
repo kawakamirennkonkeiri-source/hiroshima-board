@@ -83,6 +83,17 @@ var CFG = {
   //   チェック操作は履歴シートへ1行追記するだけ＝状態は履歴の最新行から都度組み立てる。
   TODO_MASTER_SHEET: '広島TODOマスタ',
   TODO_LOG_SHEET:    'TODO履歴',
+  // ⑫-c Googleカレンダー連携（2026-09-29追加・曽我さん依頼）：会社全体カレンダーの予定のうち、
+  //   タイトルに【広島】（半角[広島]も可）が付いたものだけをその日のTODOに出す。
+  //   ⚠CalendarAppを初めて使うので、デプロイ前に testTodoCalendar を▶実行して承認が必要。
+  TODO_CALENDAR_ID: 'kawakamirenkon116@gmail.com',
+  TODO_CALENDAR_TAG_RE: /[【\[]\s*広島\s*[】\]]/,
+
+  // ===== 🚢 前日ストック（2026-09-29追加）：発注書「発注書」シートの前日行の「ｽﾄｯｸ舟数」を自動で使う。
+  //   舟数モニターから当日ぶんだけ手入力で上書きできる（PropertiesServiceに日付ごと保存・14日で掃除）。
+  PREV_STOCK_PROP_KEY: 'PREV_STOCK_OVERRIDE',
+  // ===== ⑤ 資材管理アプリのアラート（2026-09-29追加）：資材アプリが計算した「要対応」一覧を受け取って保存
+  SHIZAI_ALERTS_PROP_KEY: 'SHIZAI_ALERTS_PUB',
 
   // ===== ⑬ Slack連携お知らせ（2026-09-24追加・広島専用チャンネル） =====
   //   スクリプトプロパティ SLACK_BOT_TOKEN / SLACK_CHANNEL_ID（広島チャンネルのID）を読む。
@@ -314,6 +325,8 @@ function doPost(e){
     else if(action === 'nzViewSave')        out = nzViewSave_(body);  // ⑦-b 本日荷造りタブの表示ウィンドウ（全PC共有）
     else if(action === 'hojoSave')          out = hojoSave_(body);    // ⑧ 圃場（畑）から持ってきた舟数
     else if(action === 'todoLog')           out = todoLogAppend_(body); // ⑫ TODOのチェック/解除を履歴へ1行追記
+    else if(action === 'prevStockSave')     out = prevStockSave_(body); // 🚢 前日ストックの当日上書き
+    else if(action === 'shizaiAlertsPublish') out = shizaiAlertsPublish_(body); // ⑤ 資材アプリのアラート一覧を受け取る
     else out = { ok:false, error:'unknown action: ' + action };
     // ⑭ 保存された内容はbundleにも含まれるので、本日ぶんのキャッシュを捨てて次の取得で作り直させる
     //   （＝保存したのに30秒〜数分そのまま古い値が返る、というのを防ぐ）
@@ -525,6 +538,11 @@ function getFunesToday_(params){
 // ============================================================
 var NZ_EXCLUDE_RE = /合計|ワンベジ|カワカミ|生産者|自社|収穫|荷造り|追い送り|ストック|ｽﾄｯｸ|舟数|残数|入力/;
 var NZ_KG_GROUP_RE = /個人注文|その他サンプル/;
+// ② 個人注文（2026-09-29変更）：広島の個人注文は2kg/5kgの列に「箱数(c/s)」で入力され、しかも
+//   入力された時点で既に作ってある（個人販売の受け渡し分）。そこでkg合算グループから外して
+//   普通の注文と同じc/s行として出し、kojin:trueを付けて「本日作った分＝注文数」を自動で埋める
+//   （getNizukuriFull_ の nzAutoMadeKojin_ 参照）。その他サンプルは従来どおりkg合算。
+var NZ_KOJIN_RE = /個人注文/;
 
 // 先頭15行・先頭3列の中から「西暦（2000〜2100）」があるセルを探し、その行を取引先名の行とする
 function findOrderNameRow_(v){
@@ -550,8 +568,9 @@ function buildOrderCols_(v, nameRow){
     if(nm) lastName = nm;
     var name = lastName;
     if(!name) continue;
-    var isKg = NZ_KG_GROUP_RE.test(name);
-    if(!isKg && NZ_EXCLUDE_RE.test(name)) continue;
+    var isKojin = NZ_KOJIN_RE.test(name);
+    var isKg = !isKojin && NZ_KG_GROUP_RE.test(name);
+    if(!isKg && !isKojin && NZ_EXCLUDE_RE.test(name)) continue;
     var nyusu = Number(v[nyusuRow] ? v[nyusuRow][c] : NaN);
     if(!(nyusu > 0)) continue;   // 入数が数値の列だけ＝実際の取引先の商品列
     var kubun = normText_(kubunRow < v.length ? v[kubunRow][c] : '');
@@ -559,7 +578,7 @@ function buildOrderCols_(v, nameRow){
     if(/^[\d.]+$/.test(kubun)) kubun = '';
     if(kubun && !byName[name]) byName[name] = kubun;
     if(isKg){ cols.push({ c:c, name:name, nyusu:nyusu, kubun:'', kgUnit:true }); continue; }
-    cols.push({ c:c, name:name, nyusu:nyusu, kubun:kubun });
+    cols.push({ c:c, name:name, nyusu:nyusu, kubun:kubun, kojin:isKojin });
   }
   return { cols: cols, byName: byName };
 }
@@ -589,7 +608,9 @@ function getNizukuriToday_(params){
       }
       var kubun = col.kubun || built.byName[col.name] || '';
       var kg = Math.round(qty * col.nyusu);
-      orders.push({ cust: col.name, kubun: kubun, nyusu: col.nyusu, qty: qty, kg: kg });
+      var od = { cust: col.name, kubun: kubun, nyusu: col.nyusu, qty: qty, kg: kg };
+      if(col.kojin) od.kojin = true;
+      orders.push(od);
       totalQty += qty; totalKg += kg;
     });
     kgOrder.forEach(function(nm){
@@ -612,13 +633,71 @@ function getNizukuriToday_(params){
 // ① 取引先名の行にある集計列（合計／荷造数量／収穫舟数／荷造り舟数／ｽﾄｯｸ舟数／追い送り残数）の本日値
 function getMainStatsToday_(params){
   params = params || {};
+  var out = readMainStatsRow_(params.date);
+  if(out.error) return out;
+  // 🚢 前日ストック（2026-09-29追加）：前日行の「ｽﾄｯｸ舟数」。前日の行が無い（休み等）ときは
+  //   最大7日さかのぼって、行がある直近の日の値を使う。舟数モニターからの当日上書きがあればそちら。
+  var baseYmd = String(params.date || '').trim() || todayYmd_();
+  var prevAuto = null, prevDate = '';
+  for(var back = 1; back <= 7; back++){
+    var dYmd = ymdAddDays_(baseYmd, -back);
+    var ps = readMainStatsRow_(dYmd);
+    if(ps.error || !ps.rowFound) continue;
+    var sv = ps.stats['ｽﾄｯｸ舟数'];
+    if(sv === undefined) sv = ps.stats['ストック舟数'];
+    prevAuto = Number(sv) || 0; prevDate = dYmd;
+    break;
+  }
+  var ov = prevStockOverrideGet_(baseYmd);
+  out.prevStockAuto = prevAuto;
+  out.prevStockDate = prevDate;
+  out.prevStockOverride = ov;
+  out.prevStock = (ov != null) ? ov : (prevAuto || 0);
+  // ④ 本日の荷造り舟数（2026-09-29変更・曽我さん指定の式）
+  //   ＝ 収穫舟数 ＋ 前日ｽﾄｯｸ舟数 − 本日ｽﾄｯｸ舟数 ＋ 生産者タブの収穫舟数
+  //   （生産者ぶんは getNizukuriFull_／フロント側で足す。ここでは発注書側の3項だけ返す）
+  var st = out.stats;
+  var harvest = (st['収穫舟数'] != null && st['収穫舟数'] !== '') ? (Number(st['収穫舟数']) || 0) : null;
+  var todayStockRaw = (st['ｽﾄｯｸ舟数'] !== undefined) ? st['ｽﾄｯｸ舟数'] : st['ストック舟数'];
+  out.todayStock = Number(todayStockRaw) || 0;
+  out.harvest = harvest;
+  out.nizukuriFunesBase = (harvest == null) ? null : (harvest + out.prevStock - out.todayStock);
+  return out;
+}
+function ymdAddDays_(ymd, n){
+  var p = String(ymd).split('-').map(Number);
+  var d = new Date(p[0], p[1] - 1, p[2] + n);
+  return Utilities.formatDate(d, CFG.TZ, 'yyyy-MM-dd');
+}
+// 🚢 前日ストックの当日上書き（舟数モニターから手入力）。value=null で上書き解除＝発注書の値に戻す
+function prevStockOverrideAll_(){
+  try{ return JSON.parse(PropertiesService.getScriptProperties().getProperty(CFG.PREV_STOCK_PROP_KEY) || '{}') || {}; }catch(e){ return {}; }
+}
+function prevStockOverrideGet_(ymd){
+  var m = prevStockOverrideAll_();
+  return (m.hasOwnProperty(ymd) && typeof m[ymd] === 'number') ? m[ymd] : null;
+}
+function prevStockSave_(body){
+  body = body || {};
+  var ymd = String(body.date || '').trim() || todayYmd_();
+  var m = prevStockOverrideAll_();
+  if(body.value === null || body.value === undefined || body.value === '') delete m[ymd];
+  else m[ymd] = Math.max(0, Number(body.value) || 0);
+  var cutoff = ymdAddDays_(todayYmd_(), -14);
+  Object.keys(m).forEach(function(k){ if(k < cutoff) delete m[k]; });
+  PropertiesService.getScriptProperties().setProperty(CFG.PREV_STOCK_PROP_KEY, JSON.stringify(m));
+  return { ok:true, date: ymd, value: (m.hasOwnProperty(ymd) ? m[ymd] : null) };
+}
+// 発注書「発注書」シートの指定日の行から、集計列（荷造り舟数・収穫舟数・ｽﾄｯｸ舟数 等）を読む（読み取りのみ）
+function readMainStatsRow_(dateParam){
   var sh = openOrderSheetReadOnly_(CFG.ORDER_MAIN_SHEET);
   if(!sh) return { error: 'シート「' + CFG.ORDER_MAIN_SHEET + '」が見つかりません' };
   var v = sh.getDataRange().getValues();
   var nameRow = findOrderNameRow_(v);
   if(nameRow < 0) return { error: '取引先の見出し行が見つかりませんでした' };
   var meta = detectDayColAndHeaderRows_(v);
-  var row = findRowByDate_(v, meta.dayCol, params.date);
+  var row = findRowByDate_(v, meta.dayCol, dateParam);
+  var params = { date: dateParam };
   var keys = ['荷造り舟数', '収穫舟数', '荷造数量', 'ｽﾄｯｸ舟数', 'ストック舟数', '追い送り残数', '合計'];
   var stats = {};
   var width = v[nameRow] ? v[nameRow].length : 0;
@@ -829,6 +908,30 @@ function nzMadeSave_(body){
   } finally { try{ lock.releaseLock(); }catch(e){} }
 }
 
+// ---- ② 個人注文の「本日作った分」自動記入（2026-09-29追加・曽我さん依頼） ----
+//   個人注文は発注書に入力された時点で既に作ってある＝他の注文のように黒板で「本日」欄を入れる運用ではない。
+//   生産ログ（DATA_SS_ID内。発注書には書かない）の合計が注文数とずれていたら、差を1日ぶんの行に寄せて合わせる。
+//     ・生産日＝実際の今日（初めて黒板が見つけた日＝入力された日）。ただし納品日が今日より前の注文は納品日
+//       （過去日を表示した時に「今日作った」扱いにしないため）。
+//     ・発注書の数字を後から直した場合も、同じ生産日の行を上書きして合計を注文数にそろえる。
+function nzAutoMadeKojin_(date, o, log, todayReal){
+  var want = Math.max(0, Math.round(Number(o.qty) || 0));
+  var total = 0; Object.keys(log).forEach(function(d){ total += Number(log[d]) || 0; });
+  if(total === want) return log;
+  var prodDate = (date < todayReal) ? date : todayReal;
+  var cur = Number(log[prodDate]) || 0;
+  var next = Math.max(0, cur + (want - total));
+  if(next === cur) return log;
+  try{
+    var res = nzMadeSave_({ date: date, prodDate: prodDate, cust: o.cust, kubun: o.kubun || '', nyusu: o.nyusu || 0,
+                            cases: next, by: '自動（個人注文）' });
+    if(res && res.ok === false) return log;
+  }catch(e){ return log; }
+  var out = {}; Object.keys(log).forEach(function(d){ out[d] = log[d]; });
+  out[prodDate] = next;
+  return out;
+}
+
 // ---- NEW判定（前回スナップショットと比較。初回実行は基準化のみ＝NEW扱いにしない） ----
 function nzSnapSheet_(){
   var ss = ssById_(CFG.DATA_SS_ID);
@@ -916,13 +1019,15 @@ function getNizukuriFull_(params){
   var orders = base.orders.map(function(o){
     var key = nzOrderKey_(date, o);
     var log = logMap[key] || {};
+    if(o.kojin) log = nzAutoMadeKojin_(date, o, log, todayReal);
     var madeToday = Number(log[todayReal]) || 0;
     var madeTotal = 0; Object.keys(log).forEach(function(d){ madeTotal += Number(log[d]) || 0; });
     var madePrev = madeTotal - madeToday;
     var totalQty = Math.round(o.qty || 0);
     return {
       cust: o.cust, kubun: o.kubun, nyusu: o.nyusu, qty: o.qty, kg: o.kg, unit: o.unit,
-      key: key, state: state.status[key] || 'mikettei',
+      key: key, state: state.status[key] || (o.kojin ? 'sakusei' : 'mikettei'),
+      kojin: !!o.kojin,
       madePrev: madePrev, madeToday: madeToday, rest: totalQty - madePrev - madeToday,
       prodLog: log,   // 生産日ごとの内訳（累計修正UIのツールチップ・日付選択時のプリフィルに使用。読み取りのみ）
       isCS: !!(o.kubun && CFG.NZ_CS_KUBUN_RE.test(o.kubun))
@@ -940,8 +1045,8 @@ function getNizukuriFull_(params){
     if(o.isCS) csKg += kg;
   });
 
-  var mstats = {};
-  try{ var ms = getMainStatsToday_(params); if(ms && ms.stats) mstats = ms.stats; }catch(e){}
+  var mstats = {}, msFull = null;
+  try{ var ms = getMainStatsToday_(params); if(ms && ms.stats){ mstats = ms.stats; msFull = ms; } }catch(e){}
   var seisanFunes = 0;
   try{
     var s = seisanGet_(params);
@@ -971,9 +1076,12 @@ function getNizukuriFull_(params){
   }catch(e){}
   var kakouRitsu = (orderCsRate != null) ? (orderCsRate * 100) : ((allKg > 0) ? (csKg / allKg * 100) : null);
 
-  // 終了目標時刻＝本日の荷造り舟数（発注書の荷造り舟数＋生産者タブの収穫舟数合計。数量変更の上書きが
-  //   あればそちら）÷（本日出勤人数×2舟/時）。電子黒板の「本日の荷造り舟数」タイルと同じ計算式にそろえる（2026-09-22）。
-  var baseNizukuriFune = (mstats['荷造り舟数'] != null && mstats['荷造り舟数'] !== '') ? (Number(mstats['荷造り舟数']) || 0) : 0;
+  // 終了目標時刻＝本日の荷造り舟数（数量変更の上書きがあればそちら）÷（本日出勤人数×2舟/時）。
+  //   本日の荷造り舟数＝収穫舟数＋前日ｽﾄｯｸ舟数−本日ｽﾄｯｸ舟数＋生産者タブの収穫舟数（2026-09-29・曽我さん指定の式）。
+  //   電子黒板の「本日の荷造り舟数」タイル（フロント nzDefaultTargetFunes_）と同じ計算式にそろえる。
+  //   発注書の収穫舟数が取れない時だけ、従来の「発注書の荷造り舟数」列を使う。
+  var baseNizukuriFune = (msFull && msFull.nizukuriFunesBase != null) ? msFull.nizukuriFunesBase
+    : ((mstats['荷造り舟数'] != null && mstats['荷造り舟数'] !== '') ? (Number(mstats['荷造り舟数']) || 0) : 0);
   var defaultTargetFunes = baseNizukuriFune + seisanFunes;
   var targetFunes = (state.targetOverride != null) ? state.targetOverride : defaultTargetFunes;
   var presentCount = 0;
@@ -1075,7 +1183,37 @@ function getShizaiAlerts_(){
     });
     out.count = out.alerts.length;
   }catch(e){ out.error = String(e); }
+  // ⑤ 資材管理アプリ本体が計算した「要対応」一覧（2026-09-29追加）。こちらがあれば黒板はこれを優先して出す
+  //   （発注書連動の在庫切れ予定・納品予定・定期チェック・破棄率・月末棚卸まで、資材アプリの画面と同じ内容）。
+  try{
+    var pub = PropertiesService.getScriptProperties().getProperty(CFG.SHIZAI_ALERTS_PROP_KEY);
+    if(pub) out.published = JSON.parse(pub);
+  }catch(e){}
   return out;
+}
+// ⑤ 資材管理アプリ（shizai.html）から「要対応」一覧を受け取って保存（POST action:'shizaiAlertsPublish'）
+//   body = { items:[{kind, text}], asOf:'yyyy-MM-dd', by }。PropertiesServiceの1値上限(9KB)に収まるよう件数・文字数を丸める。
+function shizaiAlertsPublish_(body){
+  body = body || {};
+  var items = Array.isArray(body.items) ? body.items : [];
+  var clean = [];
+  for(var i = 0; i < items.length && clean.length < 40; i++){
+    var t = String(items[i] && items[i].text || '').slice(0, 120);
+    if(!t) continue;
+    clean.push({ kind: String(items[i].kind || '').slice(0, 16), text: t });
+  }
+  var payload = {
+    items: clean,
+    total: clean.length,
+    asOf: String(body.asOf || todayYmd_()).slice(0, 10),
+    at: Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd HH:mm'),
+    by: String(body.by || '').slice(0, 40)
+  };
+  var json = JSON.stringify(payload);
+  // 上限はバイト数（日本語は1文字3バイト）なのでバイトで測る
+  while(Utilities.newBlob(json).getBytes().length > 8500 && payload.items.length){ payload.items.pop(); json = JSON.stringify(payload); }
+  PropertiesService.getScriptProperties().setProperty(CFG.SHIZAI_ALERTS_PROP_KEY, json);
+  return { ok:true, total: payload.total, at: payload.at };
 }
 
 // ============================================================
@@ -2094,7 +2232,7 @@ function testNizukuriFull(){ Logger.log(JSON.stringify(getNizukuriFull_({}), nul
 //     指定日の各業務の最新行（＝毎回降順ソートしているので先頭）から組み立てる＝操作履歴も残る。
 //   ・GET  ?type=todoMaster&date=yyyy-MM-dd → { date, items:[{task,freq}], state:{業務名:true,…} }
 //   ・POST { action:'todoLog', date, task, freq, checked:true/false, by } → 履歴へ1行追記
-//   ※センターにあるGoogleカレンダー連携（TODO_CALENDAR_ID）は広島には無い（カレンダー運用が無いため）。
+//   ※2026-09-29：会社全体カレンダーの【広島】予定もTODOに出す（⑫-c todoCalendarList_）。
 // ============================================================
 function todoMasterSheet_(){
   var ss = ssById_(CFG.DATA_SS_ID);
@@ -2239,13 +2377,72 @@ function todoFreqMatches_(freq, dateStr){
 function getTodoBoard_(dateStr){
   dateStr = String(dateStr || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
   var all = todoMasterList_();
-  var items = [];
+  var items = [], seen = {};
   for(var i = 0; i < all.length; i++){
-    if(todoFreqMatches_(all[i].freq, dateStr)) items.push(all[i]);
+    if(todoFreqMatches_(all[i].freq, dateStr)){ items.push(all[i]); seen[all[i].task] = true; }
+  }
+  // ⑫-c カレンダーの【広島】予定を後ろに足す（マスタと同名ならマスタ側を優先＝二重に出さない）
+  var cal = todoCalendarList_(dateStr);
+  for(var j = 0; j < cal.items.length; j++){
+    if(seen[cal.items[j].task]) continue;
+    seen[cal.items[j].task] = true;
+    items.push(cal.items[j]);
   }
   // masterCount＝マスタの総件数。フロントは「マスタが空」と「本日は該当なし」を
-  // これで区別してメッセージを出し分ける。
-  return { date: dateStr, items: items, masterCount: all.length, state: getTodoState_(dateStr) };
+  // これで区別してメッセージを出し分ける（カレンダー連携分も「登録あり」として数える）。
+  return { date: dateStr, items: items, masterCount: all.length + cal.items.length,
+           calendarError: cal.error || '', state: getTodoState_(dateStr) };
+}
+// ⑫-c Googleカレンダー（CFG.TODO_CALENDAR_ID＝会社全体カレンダー）の指定日の予定のうち、タイトルに
+//   【広島】が付いたものだけを拾い、【広島】を取り除いた残りをTODOの業務名にする
+//   （例：「【広島】消防設備点検 10:00」→「消防設備点検 10:00」。時刻付きの予定は頻度欄に時刻を出す）。
+//   複数日にまたがる予定は、またがる各日に出る。取得できない時は空＋errorを返すだけ＝他の機能に影響させない。
+function todoCalendarList_(dateStr){
+  try{
+    var calId = CFG.TODO_CALENDAR_ID;
+    if(!calId) return { items: [] };
+    var cal = CalendarApp.getCalendarById(calId);
+    if(!cal){
+      // 共有はされているが自分のカレンダー一覧に未登録の場合は、一度だけ登録してから読む
+      try{ cal = CalendarApp.subscribeToCalendar(calId, { hidden: true }); }catch(e){}
+    }
+    if(!cal) return { items: [], error: 'カレンダー ' + calId + ' を開けません（共有設定を確認してください）' };
+    var p = String(dateStr).split('-').map(Number);
+    var start = new Date(p[0], p[1] - 1, p[2]);
+    var end = new Date(p[0], p[1] - 1, p[2] + 1);
+    var events = cal.getEvents(start, end);
+    var re = CFG.TODO_CALENDAR_TAG_RE;
+    var out = [], seen = {};
+    for(var i = 0; i < events.length; i++){
+      var title = String(events[i].getTitle() || '').trim();
+      if(!re.test(title)) continue;
+      var task = title.replace(new RegExp(re.source, 'g'), ' ').replace(/\s+/g, ' ').trim();
+      if(!task || seen[task]) continue;
+      seen[task] = true;
+      var freq = '📅予定';
+      if(!events[i].isAllDayEvent()){
+        var st = events[i].getStartTime();
+        if(Utilities.formatDate(st, CFG.TZ, 'yyyy-MM-dd') === dateStr) freq = '📅' + Utilities.formatDate(st, CFG.TZ, 'H:mm');
+      }
+      out.push({ task: task, freq: freq, cal: true });
+    }
+    return { items: out };
+  }catch(err){
+    return { items: [], error: String(err && err.message || err) };
+  }
+}
+// エディタから▶実行：カレンダー連携の疎通確認（★初回はここで「カレンダーへのアクセス」の承認ダイアログが出る）
+//   今日から14日ぶん、【広島】の予定がどの日のTODOに出るかをログに出す。
+function testTodoCalendar(){
+  var base = new Date(), lines = [];
+  var cal = CalendarApp.getCalendarById(CFG.TODO_CALENDAR_ID);
+  lines.push('カレンダー：' + (cal ? cal.getName() : '開けません（共有・IDを確認）'));
+  for(var i = 0; i < 14; i++){
+    var ds = Utilities.formatDate(new Date(base.getFullYear(), base.getMonth(), base.getDate() + i), CFG.TZ, 'yyyy-MM-dd');
+    var r = todoCalendarList_(ds);
+    lines.push(ds + '  ' + (r.error ? ('エラー：' + r.error) : (r.items.length ? r.items.map(function(x){ return x.task + '(' + x.freq + ')'; }).join(' / ') : '―')));
+  }
+  Logger.log(lines.join('\n'));
 }
 // 頻度の書き方が意図どおり解釈されているか、1週間ぶん並べて確認する（エディタから▶実行）
 function testTodoFreq(){
