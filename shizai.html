@@ -230,7 +230,8 @@ code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
   <b>アラート方式</b>：<b>発注書連動</b>＝荷造数から自動（箱・袋・シール等）／<b>定期</b>＝○日ごとにチェック（半年=180・半月=15。手袋・エプロン等の消耗品向け）／<b>残数</b>＝残り○個で警告（ラップ・テープ等）／<b>なし</b>＝監視しない。<br>
   <b>別基準「○日分の在庫が確保できているか」</b>：下の表の <b>○日分基準</b> 欄に日数を入れる（空欄＝この基準を使わない）か、上のボタンで消耗品へまとめて付けます。<b>アラート方式はそのまま残り、この基準が追加で効きます</b>。<br>
   　→ 付けた資材は <b>在庫ダッシュボードの「状態／アクション」欄</b>に <b>✅基準45日分：いま ◯日分</b> と表示され、下回ると <b>⚠️＝発注推奨</b> になります（消耗品は45日分が目安）。<br>
-  <b>季節開始/終了</b>は「そろそろ切替では？」のお知らせのメド（空欄＝通年）。実際のグレー切替は右の <b>🟢使用中／🕒季節外</b> ボタンで手動です。<br>
+  <b>季節開始/終了</b>は「そろそろ切替では？」のお知らせのメド（空欄＝通年）。実際のグレー切替は右の <b>🌱シーズン中／🕒季節外</b> ボタンで手動です。<br>
+  <b>使用 ON／OFF</b>：季節に関係なく<b>いま使っていない資材</b>（土付き5kg・10kg箱など）は <b>⚪OFF</b> にすると、在庫ダッシュボードでグレー表示＋「未使用」になり、アラート・電子黒板の要確認にも出なくなります。また使い始めたら <b>🟢ON</b> に戻すだけです。<br>
   <b>並べ替え</b>：左の <b>⠿</b> をつかんで上下にドラッグすると、資材の並び順を変えられます（ダッシュボードなど全画面の並びに反映されます）。</div>
   <div class="tablewrap">
     <table id="matTable">
@@ -238,7 +239,7 @@ code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
         <th title="ドラッグで並べ替え"></th><th class="l">分類</th><th class="l">資材名</th><th class="l">単位</th><th class="l">仕入先</th>
         <th>LT日数</th><th>基準在庫</th><th>破棄率%</th><th>最小ロット</th>
         <th title="発注書連動/定期/残数/なし">アラート方式</th><th title="定期=日数(半年180/半月15)／残数=個数">周期/しきい値</th><th title="この日数ぶんの在庫を確保できているかを見る別基準。空欄＝使わない（消耗品は45が目安）">○日分基準</th>
-        <th title="使う時期の開始(MM-DD)。空欄=通年">季節開始</th><th title="使う時期の終了(MM-DD)。空欄=通年">季節終了</th><th></th>
+        <th title="使う時期の開始(MM-DD)。空欄=通年">季節開始</th><th title="使う時期の終了(MM-DD)。空欄=通年">季節終了</th><th title="いま使っている資材か。OFF＝現在未使用（グレー表示・アラート対象外）">使用</th><th></th>
       </tr></thead>
       <tbody></tbody>
     </table>
@@ -250,7 +251,7 @@ code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
   <div class="sec-title">商品×資材 BOM（原単位）</div>
   <div class="hint">「1箱を作るのに、どの資材を何枚使うか」。空欄＝使用なし。個人注文などkg入力のSKUは「換算後の箱数」に対して原単位が掛かります。<br>
   取引先の一覧は<b>「【広島】発注書2026年度」→「発注書」シートの列</b>と同じ並びです。初期値として<b>「対応する箱 ×1」だけ</b>を入れてあります。
-  <b style="color:var(--danger)">ばんじゅう袋・れんこんシール・ミラマット・片開きシートの原単位は空欄のまま</b>なので、実際の使い方に合わせて入力してください。<br>
+  <b style="color:var(--danger)">ばんじゅう袋（自社箱用）・れんこんシール・ミラマット・片開きシート（トレード用）の原単位は空欄のまま</b>なので、実際の使い方に合わせて入力してください。<br>
   <button class="btn sec small" onclick="bomAutoBox()">📦 一括：各SKUに「箱=1」を仮設定</button>
   <br><b>シーズン切替（8月頭など）：</b>
   <button class="btn warn small" onclick="swapSeason('toUmai')">🔁 新旨 → 旨 に一括切替</button>
@@ -429,15 +430,19 @@ const SEED_MATERIALS = [
   ['箱','土付き10kg','枚','広島ｷｮｰﾄﾞｰ',7,0,2,1000],
   ['その他資材','新旨れんこんシール','枚','ﾄﾚｰﾄﾞ',7,20400,1,5000],
   ['その他資材','旨れんこんシール','枚','ﾄﾚｰﾄﾞ',7,0,1,5000],
-  ['その他資材','ばんじゅう袋','枚','日野出',7,4000,1,10000],
+  ['その他資材','ばんじゅう袋（自社箱用）','枚','日野出',7,4000,1,10000],
   ['その他資材','ミラマット','枚','日野出',7,0,1,10000],
-  ['その他資材','片開きシート','枚','ﾄﾚｰﾄﾞ',7,10400,1,5000],
+  ['その他資材','片開きシート（トレード用）','枚','ﾄﾚｰﾄﾞ',7,10400,1,5000],
 ];
+// 2026-09-29：現在使っていない資材（季節外とは別の「使用OFF」）。初期データでOFFにしておく
+const UNUSED_MATERIALS=['土付き5kg','土付き10kg'];
+// 2026-09-29：資材名の変更（旧名→新名）。既存データ（localStorage・クラウド）も移行で置き換える
+const MATERIAL_RENAMES={'ばんじゅう袋':'ばんじゅう袋（自社箱用）','片開きシート':'片開きシート（トレード用）'};
 // 既存データ（localStorage）にも仕入先を後から埋めるための対応表（名前→仕入先）
 const MATERIAL_SUPPLIERS={'新旨2kg':'広島ｷｮｰﾄﾞｰ','新旨3.34kg':'広島ｷｮｰﾄﾞｰ','旨3.34kg':'広島ｷｮｰﾄﾞｰ',
   '2kg':'広島ｷｮｰﾄﾞｰ','洗い5kg':'広島ｷｮｰﾄﾞｰ','土付き5kg':'広島ｷｮｰﾄﾞｰ','洗い10kg':'広島ｷｮｰﾄﾞｰ','土付き10kg':'広島ｷｮｰﾄﾞｰ',
-  '新旨れんこんシール':'ﾄﾚｰﾄﾞ','旨れんこんシール':'ﾄﾚｰﾄﾞ','片開きシート':'ﾄﾚｰﾄﾞ',
-  'ばんじゅう袋':'日野出','ミラマット':'日野出'};
+  '新旨れんこんシール':'ﾄﾚｰﾄﾞ','旨れんこんシール':'ﾄﾚｰﾄﾞ','片開きシート（トレード用）':'ﾄﾚｰﾄﾞ',
+  'ばんじゅう袋（自社箱用）':'日野出','ミラマット':'日野出'};
 // [取引先,区分,入数,exc,kg,boxSize]
 // ★2026-09-24：熊本（センター）の雛形だったSKU一覧を、広島の実データに入れ替え。
 //   出どころ＝「【広島】発注書2026年度」→「発注書」シートの取引先列（24列）。
@@ -501,7 +506,8 @@ function defaultState(){
   const materials=SEED_MATERIALS.map((m,i)=>({
     id:'M'+(i+1),cat:m[0],name:m[1],unit:m[2],supplier:m[3],leadDays:m[4],
     initStock:m[5],scrapRate:m[6],minLot:m[7],
-    seasonStart:(SEASON[m[1]]||['',''])[0],seasonEnd:(SEASON[m[1]]||['',''])[1],seasonOff:false
+    seasonStart:(SEASON[m[1]]||['',''])[0],seasonEnd:(SEASON[m[1]]||['',''])[1],seasonOff:false,
+    unused:UNUSED_MATERIALS.includes(m[1])
   }));
   // 棚卸(2026.9.5)の消耗品も最初から入れておく（以前は資材マスタのボタンで後から追加していた）
   EXTRA_MATERIALS.forEach((e,i)=>materials.push(Object.assign({
@@ -528,6 +534,7 @@ function load(){ try{S=JSON.parse(localStorage.getItem(LS));}catch(e){} if(!S)S=
   if(!(S.settings.gasUrl||'').trim()) S.settings.gasUrl=GAS_URL_DEFAULT;   // 未設定なら既定のGASにつなぐ
   migrateV3();
   migHiroshimaSku();
+  migHiro0929();
 }
 function renderGasUrlNote(){
   const el=document.getElementById('gasUrlNote'); if(!el)return;
@@ -578,6 +585,25 @@ function migHiroshimaSku(){
   S.migHiroSku=true;
   try{ localStorage.setItem(LS,JSON.stringify(S)); }catch(e){}
 }
+// 2026-09-29：①資材名の変更（ばんじゅう袋→（自社箱用）／片開きシート→（トレード用））
+//   ②土付き5kg・10kg箱を「使用OFF（現在未使用）」にし、現在庫を0にそろえる。
+//   一度だけ走る。変更があれば true を返す（クラウド読込直後なら呼び出し側で再送する）。
+function migHiro0929(){
+  if(S.migHiro0929)return false;
+  (S.materials||[]).forEach(m=>{ if(MATERIAL_RENAMES[m.name]) m.name=MATERIAL_RENAMES[m.name]; });
+  const rows=computeStock();
+  (S.materials||[]).forEach(m=>{
+    if(!UNUSED_MATERIALS.includes(m.name))return;
+    m.unused=true;
+    const r=rows.find(x=>x.m.id===m.id);
+    if(r && Math.round(r.stock)!==0){
+      m.stockAdj=Number(m.stockAdj||0)-r.stock; m.stockAdjDate=todayStr(); m.stockAdjBy='未使用のため0に';
+    }
+  });
+  S.migHiro0929=true;
+  try{ localStorage.setItem(LS,JSON.stringify(S)); }catch(e){}
+  return true;
+}
 function save(){ localStorage.setItem(LS,JSON.stringify(S)); publishAlerts(); cloudMarkDirty(); }
 
 /* =================== CALC =================== */
@@ -586,7 +612,8 @@ function matById(id){return S.materials.find(m=>m.id===id);}
 function isHinode(m){ return /日野出/.test(m.supplier||''); }
 function setHinode(id,v){const m=matById(id);if(!m)return;m.hinodeStock=Math.max(0,Number(v||0));save();recalcAll();}
 // 実際のグレー切替は「手動フラグ」。inSeason=季節外ボタンが押されていないか
-function inSeason(m){ return !m.seasonOff; }
+// 使用OFF（現在未使用・2026-09-29追加）も同じくグレー＆アラート対象外にする
+function inSeason(m){ return !m.seasonOff && !m.unused; }
 function hasSeason(m){ return !!(m.seasonStart||m.seasonEnd); }
 // 日付ウィンドウ（お知らせのタイミング判定にだけ使う）
 function inDateWindow(m,dateStr){
@@ -597,13 +624,14 @@ function inDateWindow(m,dateStr){
 }
 // 切替の提案：'off'=そろそろ季節外に / 'on'=シーズン再開 / ''=提案なし
 function seasonSuggest(m){
-  if(!hasSeason(m))return'';
+  if(!hasSeason(m)||m.unused)return'';   // 使用OFFの資材には季節のお知らせも出さない
   const win=inDateWindow(m);
   if(!m.seasonOff && !win)return'off';   // 期間を過ぎたのにまだシーズン中→季節外を提案
   if(m.seasonOff && win)return'on';      // 期間に入ったのに季節外のまま→再開を提案
   return'';
 }
 function toggleSeason(id){const m=matById(id);if(!m)return;m.seasonOff=!m.seasonOff;save();recalcAll();renderMat();}
+function toggleUnused(id){const m=matById(id);if(!m)return;m.unused=!m.unused;save();recalcAll();renderMat();}
 function daysSince(dateStr){ if(!dateStr)return Infinity;
   try{const a=new Date(dateStr),b=new Date(S.settings.baseDate||todayStr());return Math.floor((b-a)/86400000);}catch(e){return Infinity;} }
 // 定期アラートの「確認した」→ 次回まで再カウント
@@ -880,7 +908,10 @@ function renderDash(){
     const showAuto = (r.mode==='auto'||r.coverOn) && !r.off;   // 日次平均・在庫日数・余裕・発注点は auto と「○日分の基準」を付けた資材で表示
     let action,cls;
     const orderBtn='<button class="btn sec small" onclick="openOrderDlg(\''+r.m.id+'\')">発注</button>';
-    if(r.off){
+    if(r.off && r.m.unused){
+      cls='muted';
+      action='⚪ 現在未使用 <button class="btn sec small" onclick="toggleUnused(\''+r.m.id+'\')">▶ 使用ONにする</button>';
+    }else if(r.off){
       cls='muted';
       action='🕒 季節外 <button class="btn '+(r.suggest==='on'?'':'sec')+' small" onclick="toggleSeason(\''+r.m.id+'\')">▶ シーズンに戻す'+(r.suggest==='on'?'（時期です）':'')+'</button>';
     }else if(r.order){
@@ -929,7 +960,7 @@ function renderDash(){
       action+=' <span class="'+(pull?'state-wait':'muted')+'" style="font-size:11px">🔵日野出保管 '+fmt(r.hinode)+(pull?'（ここから補充を）':'')+'</span>';
     }
     return `<tr style="${r.off?'opacity:.42;background:#f6f8fa':''}">
-      <td class="l muted">${r.m.cat}</td><td class="l">${r.m.name}${r.off?' <span class="tag other">季節外</span>':''}${r.m.noReorder?' <span class="tag other">発注しない</span>':''}${r.mode!=='auto'&&!r.off?' <span class="tag kg">'+(r.mode==='periodic'?'定期':r.mode==='threshold'?'残数':'監視なし')+'</span>':''}</td>
+      <td class="l muted">${r.m.cat}</td><td class="l">${r.m.name}${r.off?' <span class="tag other">'+(r.m.unused?'未使用':'季節外')+'</span>':''}${r.m.noReorder?' <span class="tag other">発注しない</span>':''}${r.mode!=='auto'&&!r.off?' <span class="tag kg">'+(r.mode==='periodic'?'定期':r.mode==='threshold'?'残数':'監視なし')+'</span>':''}</td>
       <td style="font-weight:800">${fmt(r.stock)}${r.m.stockAdj?'<br><span class="muted" style="font-size:10px" title="棚卸再確認で補正'+(r.m.stockAdjBy?(' / '+esc(r.m.stockAdjBy)):'')+'">✎'+(r.m.stockAdjDate?r.m.stockAdjDate.slice(5):'手入力')+'</span>':''}</td>
       <td>${isHinode(r.m)?'<input class="cell" type="number" min="0" style="width:72px" value="'+(r.m.hinodeStock||'')+'" onchange="setHinode(\''+r.m.id+'\',this.value)" title="日野出さん保管分（すぐ届く）">':'<span class="muted">—</span>'}</td>
       <td>${showAuto?fmt1(r.daily):'—'}</td>
@@ -1210,7 +1241,8 @@ function renderMat(){
     <td><input class="cell" style="width:56px" type="number" min="0" step="1" placeholder="—" title="この日数ぶんの在庫を確保できているかを見ます。空欄＝この基準を使わない" value="${m.coverOn?Number(m.coverDays||45):''}" onchange="setCoverDays('${m.id}',this.value)"></td>
     <td><input class="cell" style="width:64px" placeholder="MM-DD" value="${m.seasonStart||''}" onchange="setMat('${m.id}','seasonStart',this.value)"></td>
     <td><input class="cell" style="width:64px" placeholder="MM-DD" value="${m.seasonEnd||''}" onchange="setMat('${m.id}','seasonEnd',this.value)"></td>
-    <td class="l">${(m.seasonStart||m.seasonEnd)?'<button class="btn sec small" onclick="toggleSeason(\''+m.id+'\')">'+(m.seasonOff?'🕒 季節外':'🟢 使用中')+'</button> ':''}<button class="btn sec small" onclick="delMat('${m.id}')">✕</button></td></tr>`).join('');
+    <td><button class="btn ${m.unused?'sec':''} small" style="min-width:64px${m.unused?';opacity:.7':''}" onclick="toggleUnused('${m.id}')" title="${m.unused?'現在未使用（グレー・アラート対象外）。クリックで使用ONに戻す':'使用中。いま使っていなければクリックでOFF'}">${m.unused?'⚪ OFF':'🟢 ON'}</button></td>
+    <td class="l">${(m.seasonStart||m.seasonEnd)?'<button class="btn sec small" onclick="toggleSeason(\''+m.id+'\')">'+(m.seasonOff?'🕒 季節外':'🌱 シーズン中')+'</button> ':''}<button class="btn sec small" onclick="delMat('${m.id}')">✕</button></td></tr>`).join('');
 }
 function setMat(id,k,v){const m=matById(id);if(!m)return;
   m[k]=(['leadDays','initStock','scrapRate','minLot','periodDays','thresholdQty'].includes(k))?Number(v):v;
@@ -1655,7 +1687,9 @@ function applyCloudState(cloudS,meta){
   S.funes=S.funes||{};S.futureFunes=S.futureFunes||{};S.orders=S.orders||[];S.stocktakes=S.stocktakes||[];S.boms=S.boms||{};
   S.cloud={rev:Number(meta.rev)||0,savedAt:meta.savedAt||'',savedBy:meta.savedBy||''};
   migHiroshimaSku();   // クラウド側が熊本の雛形のままでも、読み込んだ時点で広島のSKUに直す
+  const mig0929=migHiro0929();   // 資材名変更・土付き箱の使用OFF（クラウドが未移行なら、直した内容をクラウドへ送り返す）
   cloudDirty=false; boardCloudFresh=true; localStorage.setItem(LS,JSON.stringify(S)); initUI();
+  if(mig0929) cloudMarkDirty();
   setSyncStatus('🟢 同期中（rev'+S.cloud.rev+' '+(S.cloud.savedAt||'')+(S.cloud.savedBy?(' by '+S.cloud.savedBy):'')+'）','#137333');
 }
 // 編集があったら少し待って自動送信
