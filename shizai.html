@@ -436,6 +436,8 @@ const SEED_MATERIALS = [
 ];
 // 2026-09-29：現在使っていない資材（季節外とは別の「使用OFF」）。初期データでOFFにしておく
 const UNUSED_MATERIALS=['土付き5kg','土付き10kg'];
+// 2026-10-01：ミラマットも現在未使用（在庫数はそのまま＝0にはしない）
+const UNUSED_MATERIALS_1001=['ミラマット'];
 // 2026-09-29：資材名の変更（旧名→新名）。既存データ（localStorage・クラウド）も移行で置き換える
 const MATERIAL_RENAMES={'ばんじゅう袋':'ばんじゅう袋（自社箱用）','片開きシート':'片開きシート（トレード用）'};
 // 既存データ（localStorage）にも仕入先を後から埋めるための対応表（名前→仕入先）
@@ -507,7 +509,7 @@ function defaultState(){
     id:'M'+(i+1),cat:m[0],name:m[1],unit:m[2],supplier:m[3],leadDays:m[4],
     initStock:m[5],scrapRate:m[6],minLot:m[7],
     seasonStart:(SEASON[m[1]]||['',''])[0],seasonEnd:(SEASON[m[1]]||['',''])[1],seasonOff:false,
-    unused:UNUSED_MATERIALS.includes(m[1])
+    unused:UNUSED_MATERIALS.includes(m[1])||UNUSED_MATERIALS_1001.includes(m[1])
   }));
   // 棚卸(2026.9.5)の消耗品も最初から入れておく（以前は資材マスタのボタンで後から追加していた）
   EXTRA_MATERIALS.forEach((e,i)=>materials.push(Object.assign({
@@ -535,6 +537,7 @@ function load(){ try{S=JSON.parse(localStorage.getItem(LS));}catch(e){} if(!S)S=
   migrateV3();
   migHiroshimaSku();
   migHiro0929();
+  migHiro1001();
 }
 function renderGasUrlNote(){
   const el=document.getElementById('gasUrlNote'); if(!el)return;
@@ -601,6 +604,14 @@ function migHiro0929(){
     }
   });
   S.migHiro0929=true;
+  try{ localStorage.setItem(LS,JSON.stringify(S)); }catch(e){}
+  return true;
+}
+// 2026-10-01：ミラマットを「使用OFF（現在未使用）」に。一度だけ走る（後でONに戻しても再びOFFにはしない）。
+function migHiro1001(){
+  if(S.migHiro1001)return false;
+  (S.materials||[]).forEach(m=>{ if(UNUSED_MATERIALS_1001.includes(m.name)) m.unused=true; });
+  S.migHiro1001=true;
   try{ localStorage.setItem(LS,JSON.stringify(S)); }catch(e){}
   return true;
 }
@@ -1688,8 +1699,9 @@ function applyCloudState(cloudS,meta){
   S.cloud={rev:Number(meta.rev)||0,savedAt:meta.savedAt||'',savedBy:meta.savedBy||''};
   migHiroshimaSku();   // クラウド側が熊本の雛形のままでも、読み込んだ時点で広島のSKUに直す
   const mig0929=migHiro0929();   // 資材名変更・土付き箱の使用OFF（クラウドが未移行なら、直した内容をクラウドへ送り返す）
+  const mig1001=migHiro1001();   // ミラマットの使用OFF（同上）
   cloudDirty=false; boardCloudFresh=true; localStorage.setItem(LS,JSON.stringify(S)); initUI();
-  if(mig0929) cloudMarkDirty();
+  if(mig0929||mig1001) cloudMarkDirty();
   setSyncStatus('🟢 同期中（rev'+S.cloud.rev+' '+(S.cloud.savedAt||'')+(S.cloud.savedBy?(' by '+S.cloud.savedBy):'')+'）','#137333');
 }
 // 編集があったら少し待って自動送信
