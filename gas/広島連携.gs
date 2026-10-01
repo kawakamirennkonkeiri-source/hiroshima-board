@@ -1057,15 +1057,22 @@ function getNizukuriFull_(params){
   });
   nzMarkNew_(date, orders);   // 各要素にisNewを付与（発注書側は一切変更しない）
 
-  // 本日作った分の実績（個人注文/その他サンプル＝kg単位グループは、センターと同じ理由で対象外）
+  // 本日作った分の実績（その他サンプル＝kg単位グループは、センターと同じ理由で対象外）
+  //   ⚠ 納品日がこの日の注文だけでなく、生産ログ全体から「生産日=todayReal」の行を合計する
+  //   （2026-10-01：明日・明後日納品分を今日作った分が歩留まりに入らず、本日の荷造り合計1979.3kgに対し
+  //    550kg÷40舟=13.75になっていた。キー＝納品日|取引先|区分|入数。kg単位グループは区分が空なので除外）。
   var allKg = 0, csKg = 0;
-  orders.forEach(function(o){
-    if(o.unit === 'kg') return;
-    var kg = o.madeToday * (o.nyusu || 0);
-    if(!kg) return;
+  Object.keys(logMap).forEach(function(k){
+    var made = Number((logMap[k] || {})[todayReal]) || 0;
+    if(!made) return;
+    var p = k.split('|');
+    var kubun = p[2] || '', nyusu = Number(p[3]) || 0;
+    if(!kubun || !nyusu) return;
+    var kg = made * nyusu;
     allKg += kg;
-    if(o.isCS) csKg += kg;
+    if(CFG.NZ_CS_KUBUN_RE.test(kubun)) csKg += kg;
   });
+  allKg = Math.round(allKg * 100) / 100; csKg = Math.round(csKg * 100) / 100;
 
   var mstats = {}, msFull = null;
   try{ var ms = getMainStatsToday_(params); if(ms && ms.stats){ mstats = ms.stats; msFull = ms; } }catch(e){}
