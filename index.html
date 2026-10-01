@@ -146,6 +146,10 @@
   .nz-row .qc4 .ql{ display:block; font-size:10px; font-weight:800; color:var(--muted); margin-bottom:2px; }
   .nz-row .qc4 .cs{ font-size:18px; font-weight:800; font-variant-numeric:tabular-nums; color:var(--text-primary); }
   .nz-row .qc4 .cs small{ font-size:10px; font-weight:700; color:var(--muted); margin-left:1px; }
+  .nz-row .qc4 .qkg{ display:block; font-size:12px; font-weight:800; color:var(--text-secondary); font-variant-numeric:tabular-nums; margin-top:2px; min-height:14px; }
+  .nz-row .qc4 .qkg small{ font-size:9px; font-weight:700; color:var(--muted); margin-left:1px; }
+  .nz-row .qc4 .prev .qkg{ color:var(--muted); }
+  .nz-day-head .sub b{ font-size:15px; color:var(--text-primary); font-variant-numeric:tabular-nums; margin:0 1px; }
   .nz-row .qc4 .total .cs{ color:var(--blue-deep); }
   .nz-row .qc4 .rest .cs{ color:var(--text-primary); }
   .nz-row .qc4 .rest.done .cs{ color:var(--green); }
@@ -580,14 +584,14 @@
     document.querySelectorAll('nav.tabs .tab').forEach(function(b){ b.classList.remove('sel'); });
     document.getElementById('view-' + name).classList.add('show');
     document.getElementById('tab-' + name).classList.add('sel');
-    if(name === 'nizukuri') nzLoadDaysNow_();
+    if(name === 'nizukuri') nzLoadDaysNow_(true);
     if(name === 'seisan') seisanOnOpen();
     if(name === 'haichi') haichiOnOpen();
     if(name === 'hojo') hojoOnOpen();
     if(name === 'funes') fnOnOpen();
     // 🔍進捗差分は本日荷造りタブと同じ複数日データ（NZ_DAY_ITEMS）を見るため、こちらを開いた時も
     // 取得する（本日荷造りタブを一度も開いていなくても正しい値が出るように）。
-    if(name === 'skudiff'){ renderSkuDiff(); nzLoadDaysNow_(); }
+    if(name === 'skudiff'){ renderSkuDiff(); nzLoadDaysNow_(true); }
   }
 
   function tickClock(){
@@ -639,9 +643,24 @@
   }
   // 表示ウィンドウぶん（複数日）の注文一覧を取得して描画。タブを開いた時・日数変更/ジャンプ操作の直後・
   //   タブを開いている間の30秒ごと（下のsetIntervalから）に呼ぶ。
-  function nzLoadDaysNow_(){
-    gasGet_('nizukuriFullDays', { days: NZ_DAYS_WANTED, date: nzViewStart_() }, function(data, err){
-      if(!err && data && data.days) renderNizukuriDays_(data.days);
+  // ③ 高速化（2026-10-01）：タブを開いた瞬間は ①このPCに残した前回分 → ②GASの控え（stale=1・約2秒）
+  //   で先に出し、控えが古ければ裏で最新（約12秒）を取り直して入れ替える。
+  function nzDaysLsKey_(){ return 'hb_nzd_' + todayStr_() + '_' + nzViewStart_() + '_' + NZ_DAYS_WANTED; }
+  var _nzLoadSeq = 0;
+  function nzLoadDaysNow_(first){
+    var key = nzDaysLsKey_(), seq = ++_nzLoadSeq;
+    if(first){
+      try{ var o = JSON.parse(localStorage.getItem(key) || 'null'); if(o && o.days) renderNizukuriDays_(o.days); }catch(e){}
+    }
+    var q = { days: NZ_DAYS_WANTED, date: nzViewStart_() };
+    if(first) q.stale = 1;
+    gasGet_('nizukuriFullDays', q, function(data, err){
+      if(seq !== _nzLoadSeq) return;   // 後から出した取得がある＝この応答は古いので捨てる
+      if(!err && data && data.days){
+        renderNizukuriDays_(data.days);
+        try{ localStorage.setItem(key, JSON.stringify({ at: Date.now(), days: data.days })); }catch(e){}
+      }
+      if(first && (err || !data || data._stale)) nzLoadDaysNow_(false);   // 控えが古い／無い → 最新を取り直す
     });
   }
   setInterval(function(){ if(nzTabActive_()) nzLoadDaysNow_(); }, 30000);
@@ -654,7 +673,7 @@
     var changed = (dw !== NZ_DAYS_WANTED) || (jd !== NZ_JUMP_DATE);
     NZ_DAYS_WANTED = dw; NZ_JUMP_DATE = jd;
     nzUpdateDaysLabel_();
-    if(changed && nzTabActive_()) nzLoadDaysNow_();
+    if(changed && nzTabActive_()) nzLoadDaysNow_(true);
   }
   function nzPushView_(){
     NZ_VIEW_DIRTY = true;
@@ -667,14 +686,14 @@
     NZ_DAYS_WANTED = Math.min(14, NZ_DAYS_WANTED + 1);
     nzUpdateDaysLabel_();
     nzPushView_();
-    nzLoadDaysNow_();
+    nzLoadDaysNow_(true);
   }
   // 「3日に戻す」：既定の3日・今日起点に戻す
   function nzResetDays(){
     NZ_DAYS_WANTED = 3; NZ_JUMP_DATE = '';
     nzUpdateDaysLabel_();
     nzPushView_();
-    nzLoadDaysNow_();
+    nzLoadDaysNow_(true);
   }
   // 「この日を表示」：入力した日付を起点に、現在の表示日数ぶんを表示
   function nzJumpDay(){
@@ -682,7 +701,7 @@
     if(!j || !j.value) return;
     NZ_JUMP_DATE = j.value;
     nzPushView_();
-    nzLoadDaysNow_();
+    nzLoadDaysNow_(true);
   }
 
   // 予測・予定カード用の1枚を描画（実績カードと共通の見た目・補足説明文つき）
@@ -719,7 +738,7 @@
 
     // ⑥ 本日出勤人数（DATA_SS_ID内「R◯年◯月」シートより）
     if(LAST_SHIFT && !LAST_SHIFT.error){
-      cards.push({ lbl: '本日出勤人数', val: LAST_SHIFT.presentCount, u: '人 / ' + LAST_SHIFT.totalCount + '人中', sub: 'シフト表の〇の人数' });
+      cards.push({ lbl: '本日出勤人数', val: LAST_SHIFT.presentCount, u: '人 / ' + LAST_SHIFT.totalCount + '人中', sub: (LAST_SHIFT.source === 'holiday') ? ('会社休みシートで判定：' + (LAST_SHIFT.dayKind || '出勤日')) : 'シフト表の〇の人数' });
     }
 
     var mstats = (LAST_MAINSTATS && !LAST_MAINSTATS.error && LAST_MAINSTATS.stats) ? LAST_MAINSTATS.stats : {};
@@ -785,13 +804,34 @@
   function nzDaySectionHtml_(iso, d, orders){
     var isToday = iso === todayStr_();
     var head = '<div class="nz-day-head"><span class="d' + (isToday ? ' is-today' : '') + '">' + escHtml_(nzDateLabel_(iso)) + '</span>' +
-      (d && d.error ? '<span class="warn">' + escHtml_(String(d.error)) + '</span>' : '<span class="sub">' + orders.length + '件</span>') +
+      (d && d.error ? '<span class="warn">' + escHtml_(String(d.error)) + '</span>' : '<span class="sub" data-daykg="' + escAttr_(iso) + '">' + nzDayKgHtml_(orders) + '</span>') +
       '</div>';
     if(!orders.length){
       return '<div class="nz-daysec">' + head + '<div class="empty-note" style="padding:6px 2px 2px;">この日の注文はまだ無いようです。</div></div>';
     }
     var rows = orders.map(nzRowHtml_).join('');
     return '<div class="nz-daysec">' + head + '<div class="nz-rows">' + rows + '</div></div>';
+  }
+  // ① ケース→kg（センター電子黒板と同じく、各欄のc/sの下に小さくkgを出す。kg入力の行は主表示がkgなので出さない）
+  function nzKgOf_(o, cs){ return (o.unit === 'kg') ? (Number(cs) || 0) : (Number(cs) || 0) * (Number(o.nyusu) || 0); }
+  function nzFmtKg_(kg){
+    var v = Math.round((Number(kg) || 0) * 10) / 10;
+    return v.toLocaleString('ja-JP', { maximumFractionDigits: 1 });
+  }
+  function nzKgLine_(o, cs){ return (o.unit === 'kg') ? '' : nzFmtKg_(nzKgOf_(o, cs)) + '<small>kg</small>'; }
+  // 日付見出しの右側：件数／合計kg／のこりkg（のこりは本日欄・累計の入力でその場で書き換える）
+  function nzDayKgHtml_(orders){
+    var total = 0, rest = 0;
+    orders.forEach(function(o){
+      total += nzKgOf_(o, o.qty);
+      rest += Math.max(0, nzKgOf_(o, o.rest));
+    });
+    return orders.length + '件　合計 <b>' + nzFmtKg_(total) + '</b>kg　のこり <b>' + nzFmtKg_(rest) + '</b>kg';
+  }
+  function nzRefreshDayKg_(item){
+    if(!item || !item.data) return;
+    var els = document.querySelectorAll('[data-daykg="' + item.date + '"]');
+    for(var i = 0; i < els.length; i++) els[i].innerHTML = nzDayKgHtml_(item.data.orders || []);
   }
   function nzRowHtml_(o, idx){
     var isKg = o.unit === 'kg';
@@ -805,11 +845,11 @@
         '<button class="nz-status" data-st="' + o.state + '" onclick="nzStateCycle(\'' + escAttr_(o.key) + '\')">' + nzStateMark_(o.state) + ' ' + escHtml_(nzStateLabel_(o.state)) + '</button>' +
       '</div>' +
       '<div class="qc4">' +
-        '<div class="qi total"><span class="ql">合計</span><span class="cs">' + escHtml_(String(Math.round(o.qty || 0))) + '<small>' + U + '</small></span></div>' +
-        '<div class="qi prev"><span class="ql">累計</span><span class="cs prev-v" title="' + escAttr_(nzPrevTooltipText_(o)) + '">' + escHtml_(String(o.madePrev || 0)) + '<small>' + U + '</small></span><button type="button" class="prev-edit-btn" onclick="nzPrevFixToggle(this)">✎ 直す</button></div>' +
+        '<div class="qi total"><span class="ql">合計</span><span class="cs">' + escHtml_(String(Math.round(o.qty || 0))) + '<small>' + U + '</small></span><span class="qkg">' + nzKgLine_(o, Math.round(o.qty || 0)) + '</span></div>' +
+        '<div class="qi prev"><span class="ql">累計</span><span class="cs prev-v" title="' + escAttr_(nzPrevTooltipText_(o)) + '">' + escHtml_(String(o.madePrev || 0)) + '<small>' + U + '</small></span><span class="qkg prev-kg">' + nzKgLine_(o, o.madePrev || 0) + '</span><button type="button" class="prev-edit-btn" onclick="nzPrevFixToggle(this)">✎ 直す</button></div>' +
         '<div class="qi made"><span class="ql">本日</span><input class="q-made" type="number" min="0" step="1" value="' + (o.madeToday || '') + '" data-key="' + escAttr_(o.key) + '"' +
-          ' oninput="nzMadeInput(this)" onchange="nzMadeCommit(this)"></div>' +
-        '<div class="qi rest' + (o.rest <= 0 ? ' done' : '') + '"><span class="ql">のこり</span><span class="cs rest-v">' + escHtml_(String(o.rest)) + '<small>' + U + '</small></span></div>' +
+          ' oninput="nzMadeInput(this)" onchange="nzMadeCommit(this)"><span class="qkg made-kg">' + nzKgLine_(o, o.madeToday || 0) + '</span></div>' +
+        '<div class="qi rest' + (o.rest <= 0 ? ' done' : '') + '"><span class="ql">のこり</span><span class="cs rest-v">' + escHtml_(String(o.rest)) + '<small>' + U + '</small></span><span class="qkg rest-kg">' + nzKgLine_(o, o.rest) + '</span></div>' +
       '</div>' +
       '<div class="prev-fix" style="display:none;">' +
         '<span class="prev-fix-lbl">過去に作った分を直す：</span>' +
@@ -867,6 +907,15 @@
     if(prevVal){ prevVal.innerHTML = escHtml_(String(o.madePrev)) + '<small>' + U + '</small>'; prevVal.title = nzPrevTooltipText_(o); }
     if(restVal) restVal.innerHTML = escHtml_(String(o.rest)) + '<small>' + U + '</small>';
     if(restLine) restLine.classList.toggle('done', o.rest <= 0);
+    nzRefreshRowKg_(row, o);
+    nzRefreshDayKg_(item);
+  }
+  function nzRefreshRowKg_(row, o){
+    if(!row) return;
+    var set = function(sel, cs){ var el = row.querySelector(sel); if(el) el.innerHTML = nzKgLine_(o, cs); };
+    set('.prev-kg', o.madePrev || 0);
+    set('.made-kg', o.madeToday || 0);
+    set('.rest-kg', o.rest);
   }
   var nzPrevSaveTimers = {};
   function nzPrevAmtCommit(amtInp){
@@ -906,6 +955,8 @@
     var restVal = row ? row.querySelector('.rest-v') : null;
     if(restLine) restLine.classList.toggle('done', o.rest <= 0);
     if(restVal) restVal.innerHTML = escHtml_(String(o.rest)) + '<small>' + (o.unit === 'kg' ? 'kg' : 'c/s') + '</small>';
+    nzRefreshRowKg_(row, o);
+    nzRefreshDayKg_(item);
   }
   function nzMadeCommit(el){
     var key = el.getAttribute('data-key');
@@ -1101,17 +1152,33 @@
     // 2回目以降（30秒ポーリング）は180秒。誰かが保存したらGAS側でキャッシュが捨てられるので、
     // 入力内容は180秒を待たず次のポーリングで全PCへ反映される（この値が効くのは
     // 「誰も何も触っていない時に、わざわざ作り直すか」だけ）。
-    var q = { date: todayStr_(), maxAge: (_bundleFirstLoad ? 600 : 180) };
+    // ③ 2026-10-01〜初回は stale=1＝誰かが入力した直後でもGASの控えを約2秒で返してもらい、
+    //   控えが古かった（_stale）ときだけ、すぐ裏で最新を取り直す（従来は入力直後に開くと9秒待ちだった）。
+    var first = _bundleFirstLoad;
+    var q = { date: todayStr_(), maxAge: (first ? 600 : 180) };
+    if(first) q.stale = 1;
     _bundleFirstLoad = false;
     gasGet_('bundle', q, function(data, err){
-      if(err || !data){ document.getElementById('status').textContent = '🟡 通信エラー：' + (err || ''); return; }
+      if(err || !data){ document.getElementById('status').textContent = '🟡 通信エラー：' + (err || ''); if(first) loadBundle_(); return; }
       applyBundle_(data);
       bundleSaveLocal_(data);
       var age = Number(data._ageSec || 0);
-      document.getElementById('status').textContent = '🟢 最終更新 ' + new Date().toLocaleTimeString('ja-JP')
-        + (age > 90 ? '（データは' + Math.round(age / 60) + '分前の内容）' : '');
+      document.getElementById('status').textContent = (data._stale ? '⏳ ' : '🟢 ') + '最終更新 ' + new Date().toLocaleTimeString('ja-JP')
+        + (data._stale ? '（最新を取得しています…）' : (age > 90 ? '（データは' + Math.round(age / 60) + '分前の内容）' : ''));
+      if(first && data._stale) loadBundle_();
     });
   }
+  // 前日以前の控え（hb_bundle_／hb_nzd_）を掃除
+  (function(){
+    try{
+      var td = todayStr_(), del = [];
+      for(var i = 0; i < localStorage.length; i++){
+        var k = localStorage.key(i) || '';
+        if((/^hb_bundle_/.test(k) && k !== BUNDLE_LS_KEY) || (/^hb_nzd_/.test(k) && k.indexOf('hb_nzd_' + td + '_') !== 0)) del.push(k);
+      }
+      del.forEach(function(k){ localStorage.removeItem(k); });
+    }catch(e){}
+  })();
 
   function applyBundle_(data){
       if(data.mainStats) LAST_MAINSTATS = data.mainStats;

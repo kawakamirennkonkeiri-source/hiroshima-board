@@ -106,7 +106,8 @@ var CFG = {
   // ===== ⑭ 応答キャッシュ（2026-09-24追加・「開くのが遅い」対策） =====
   //   bundleは発注書スプレッドシートを何度も読むため実測16〜17秒かかっていた。
   //   組み立て結果をCacheServiceへ入れ、次からはキャッシュを返す（＝1.5〜2秒）。
-  BUNDLE_CACHE_SEC: 900,       // キャッシュの保持時間（秒）。これを過ぎたら必ず作り直す
+  BUNDLE_CACHE_SEC: 21600,     // キャッシュの保持時間（秒・CacheServiceの上限6時間）。2026-10-01に900→21600
+                               //   （鮮度はmaxAge/HB_DIRTYで判定するので、長く持つのは「開いた瞬間に出す用」の古い控え）
   BUNDLE_MAX_AGE_SEC: 180,     // 既定の許容鮮度。?maxAge=600 のように呼び出し側から緩められる
                                //   ⚠保存（POST）のたびにキャッシュを捨てるので、誰かが入力した内容は
                                //     この秒数を待たずに次のポーリングで全PCへ反映される。
@@ -117,7 +118,10 @@ var CFG = {
   CACHE_WARM_HOUR_FROM: 5,
   CACHE_WARM_HOUR_TO: 19,
 
-  MARK_PRESENT: '〇'
+  MARK_PRESENT: '〇',
+  // ⑥-b シフトシートが無い月は「会社休み」シートで出勤を判定（2026-10-01追加）
+  SHIFT_HOLIDAY_SHEET: '会社休み',
+  SHIFT_YAKUIN_NAMES: ['中島誠一郎']   // 「役員出勤」の日に出勤する人（空白は無視して比較）
 };
 
 // ============================================================
@@ -186,16 +190,23 @@ function bundleCacheKey_(params){
   var d = String((params && params.date) || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
   return 'HB_BUNDLE_' + d;
 }
-// 本日ぶんのbundleキャッシュを捨てる（保存系POSTの直後に呼ぶ＝自分の保存がすぐ画面に返るように）
-function dropBundleCacheToday_(){ cacheDrop_(bundleCacheKey_({})); }
+// 保存系POSTの直後に呼ぶ。2026-10-01〜キャッシュは捨てずに「この時刻より前に作ったものは古い」という
+//   印（HB_DIRTY）だけ付ける＝通常の取得は作り直すが、?stale=1（画面を開いた瞬間の1回目）は古いままでも
+//   すぐ返せる（キャッシュを消してしまうと、入力直後に開いた人が9〜12秒待たされていた）。
+function dropBundleCacheToday_(){
+  try{ CacheService.getScriptCache().put('HB_DIRTY', String(Date.now()), 21600); }catch(e){}
+}
+function boardDirtyAt_(){
+  try{ return Number(CacheService.getScriptCache().get('HB_DIRTY') || 0); }catch(e){ return 0; }
+}
 
-// キャッシュ付きbundle。
+// キャッシュ付き取得の共通部品（bundle と nizukuriFullDays で使う）。
 //   ?maxAge=秒 … これより古いキャッシュは作り直す（既定 CFG.BUNDLE_MAX_AGE_SEC）。
-//                 画面を開いた直後は maxAge を大きめ（例600）にして「まず出す」のが速い。
+//   ?stale=1   … 古くても（保存後でも）キャッシュがあればそのまま即返す＝画面を開いた瞬間用。
+//                 フロントは返ってきた _stale を見て、裏でもう1回（stale無しで）取り直す。
 //   ?nocache=1 … キャッシュを無視して必ず作り直す（診断用）。
-function getBundleCached_(params){
+function cachedBuild_(key, params, builder){
   params = params || {};
-  var key = bundleCacheKey_(params);
   var now = Date.now();
   var maxAge = Number(params.maxAge);
   if(!(maxAge >= 0)) maxAge = CFG.BUNDLE_MAX_AGE_SEC;
@@ -205,17 +216,32 @@ function getBundleCached_(params){
       try{
         var hit = JSON.parse(raw);
         var age = (now - Number(hit._builtAtMs || 0)) / 1000;
-        if(age >= 0 && age <= maxAge){ hit._cache = 'hit'; hit._ageSec = Math.round(age); return hit; }
+        var fresh = (age >= 0 && age <= maxAge && Number(hit._builtAtMs || 0) >= boardDirtyAt_());
+        if(fresh || String(params.stale || '') === '1'){
+          hit._cache = fresh ? 'hit' : 'stale'; hit._stale = !fresh; hit._ageSec = Math.round(age);
+          return hit;
+        }
       }catch(e){}
     }
   }
-  var out = getBundle_(params);
-  out._builtAtMs = Date.now();
+  var out = builder(params);
+  out._builtAtMs = now;   // 組み立て開始時刻（組み立て中に保存があれば次回は古い扱いになる）
   out._builtAt = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd HH:mm:ss');
   out._cache = 'miss';
+  out._stale = false;
   out._ageSec = 0;
   cachePut_(key, JSON.stringify(out), CFG.BUNDLE_CACHE_SEC);
   return out;
+}
+function getBundleCached_(params){
+  return cachedBuild_(bundleCacheKey_(params), params, getBundle_);
+}
+// ⑦-b 本日荷造りタブ（複数日）も同じ仕組みでキャッシュ（素の組み立ては実測12秒）
+function getNizukuriFullDaysCached_(params){
+  params = params || {};
+  var start = String(params.date || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
+  var key = 'HB_NZD_' + Utilities.formatDate(new Date(), CFG.TZ, 'yyyyMMdd') + '_' + start + '_' + (Number(params.days) || 3);
+  return cachedBuild_(key, params, getNizukuriFullDays_);
 }
 
 // ★ 5分おきのトリガーに登録しておくと、キャッシュが常に温まっている＝朝いちで開く人も待たされない。
@@ -228,12 +254,7 @@ function refreshBoardCache(){
   var hour = Number(Utilities.formatDate(new Date(), CFG.TZ, 'H'));
   if(hour < CFG.CACHE_WARM_HOUR_FROM || hour >= CFG.CACHE_WARM_HOUR_TO) return 'skip(時間外)';
   var params = { date: Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd') };
-  var out = getBundle_(params);
-  out._builtAtMs = Date.now();
-  out._builtAt = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd HH:mm:ss');
-  out._cache = 'trigger';
-  out._ageSec = 0;
-  cachePut_(bundleCacheKey_(params), JSON.stringify(out), CFG.BUNDLE_CACHE_SEC);
+  var out = cachedBuild_(bundleCacheKey_(params), { date: params.date, nocache: '1' }, getBundle_);
   try{ getNewsCached_(true); }catch(e){}   // Slackお知らせも一緒に温めておく
   return out._builtAt;
 }
@@ -280,7 +301,7 @@ function doGet(e){
     else if(type === 'haichiGet')    out = getHaichiGet_(e.parameter);             // ⑥ 配置図
     else if(type === 'debugShift')   out = debugShift_(e.parameter);               // ⑥ 診断用
     else if(type === 'nizukuriFull') out = getNizukuriFull_(e.parameter);          // ⑦ 状態管理・生産ログ・実績計算つきの本日荷造り
-    else if(type === 'nizukuriFullDays') out = getNizukuriFullDays_(e.parameter);  // ⑦-b 表示ウィンドウぶん（複数日）をまとめて取得
+    else if(type === 'nizukuriFullDays') out = getNizukuriFullDaysCached_(e.parameter); // ⑦-b 表示ウィンドウぶん（複数日）をまとめて取得
     else if(type === 'nzViewGet')    out = nzViewGet_();                           // ⑦-b 本日荷造りタブの表示ウィンドウ（全PC共有）
     else if(type === 'hojoGet')      out = hojoGet_(e.parameter);                  // ⑧ 圃場（畑）から持ってきた舟数
     else if(type === 'debugHojoSource') out = debugHojoSource_(e.parameter);       // ⑧ 診断用：朝礼ボード連携
@@ -1864,11 +1885,8 @@ function getHiroshimaShiftToday_(params){
   var ymd = Utilities.formatDate(target, CFG.TZ, 'yyyy-MM-dd');
   var ss = ssById_(CFG.DATA_SS_ID);
   var sheetName = findShiftSheetName_(ss, target);
-  if(!sheetName){
-    var rm = reiwaYearMonth_(target);
-    var all = ss.getSheets().map(function(s){ return s.getName(); }).filter(function(n){ return /^R\d+年\d+月$/.test(n); });
-    return { error: 'シフトシート「R' + rm.reiwa + '年' + rm.month + '月」が見つかりません。存在するシート：' + all.join('、') };
-  }
+  // その月のシフトシートが無い月（2026-10〜）は「会社休み以外は既存メンバー全員出勤」で組み立てる
+  if(!sheetName) return shiftFromCompanyHoliday_(ss, target, ymd);
   var sh = ss.getSheetByName(sheetName);
   var v = sh.getDataRange().getValues();
   var head = findShiftDayHeaderRow_(v, target.getMonth() + 1);
@@ -1876,17 +1894,84 @@ function getHiroshimaShiftToday_(params){
   var day = target.getDate();
   var col = head.col0 + (day - 1);
   var workers = [], presentCount = 0;
+  readShiftRoster_(v, head).forEach(function(x){
+    var mark = normText_(v[x.row][col]);
+    var present = (mark === CFG.MARK_PRESENT);
+    if(present) presentCount++;
+    workers.push({ name: x.name, mark: mark, present: present });
+  });
+  return { date: ymd, sheet: sheetName, source: 'sheet', workers: workers, presentCount: presentCount, totalCount: workers.length };
+}
+// シフト表の氏名行（日付ヘッダーの2行下〜「合計人数」の手前まで）
+function readShiftRoster_(v, head){
+  var out = [];
   var scanLimit = Math.min(v.length, head.row + 2 + 80);
   for(var r = head.row + 2; r < scanLimit; r++){
     var label = normText_(v[r][1]);
     if(label.indexOf('合計人数') >= 0) break;
     if(!label) continue;
-    var mark = normText_(v[r][col]);
-    var present = (mark === CFG.MARK_PRESENT);
-    if(present) presentCount++;
-    workers.push({ name: label, mark: mark, present: present });
+    out.push({ name: label, row: r });
   }
-  return { date: ymd, sheet: sheetName, workers: workers, presentCount: presentCount, totalCount: workers.length };
+  return out;
+}
+
+// ---- ⑥-b 会社休みシートからの出勤判定（2026-10-01追加・曽我さん依頼） ----
+//   「会社休み」シート（DATA_SS_ID内。A=日付／B=種別）を見て、
+//     ・載っていない日 … 既存メンバー全員出勤
+//     ・B列が空欄や「盆休み」等 … 全員休み
+//     ・B列が「役員出勤」 … CFG.SHIFT_YAKUIN_NAMES（中島 誠一郎）だけ出勤
+//   既存メンバー＝対象日より前で一番新しい「R◯年◯月」シートの氏名行（無ければ一番新しいシート）。
+function companyHolidayMap_(ss){
+  var sh = ss.getSheetByName(CFG.SHIFT_HOLIDAY_SHEET || '会社休み');
+  var map = {};
+  if(!sh) return null;
+  var v = sh.getDataRange().getValues();
+  for(var r = 1; r < v.length; r++){
+    var a = v[r][0], key = '';
+    if(a instanceof Date) key = Utilities.formatDate(a, CFG.TZ, 'yyyy-MM-dd');
+    else key = ymdFromParam_(a);
+    if(!key) continue;
+    map[key] = normText_(v[r][1]);
+  }
+  return map;
+}
+function latestShiftRosterNames_(ss, target){
+  var want = (target.getFullYear() - 2018) * 100 + (target.getMonth() + 1);
+  var best = null, bestAny = null;
+  ss.getSheets().forEach(function(s){
+    var m = s.getName().match(/^R(\d+)年(\d+)月$/);
+    if(!m) return;
+    var k = Number(m[1]) * 100 + Number(m[2]);
+    if(k <= want && (!best || k > best.k)) best = { k: k, sh: s, month: Number(m[2]) };
+    if(!bestAny || k > bestAny.k) bestAny = { k: k, sh: s, month: Number(m[2]) };
+  });
+  var pick = best || bestAny;
+  if(!pick) return { names: [], sheet: '' };
+  var v = pick.sh.getDataRange().getValues();
+  var head = findShiftDayHeaderRow_(v, pick.month);
+  if(!head) return { names: [], sheet: pick.sh.getName() };
+  return { names: readShiftRoster_(v, head).map(function(x){ return x.name; }), sheet: pick.sh.getName() };
+}
+function shiftFromCompanyHoliday_(ss, target, ymd){
+  var roster = latestShiftRosterNames_(ss, target);
+  if(!roster.names.length) return { error: 'メンバーの元になる「R◯年◯月」シフトシートが見つかりません' };
+  var hol = companyHolidayMap_(ss);
+  if(!hol) return { error: '「' + (CFG.SHIFT_HOLIDAY_SHEET || '会社休み') + '」シートが見つかりません' };
+  var kind = Object.prototype.hasOwnProperty.call(hol, ymd) ? hol[ymd] : null;   // null＝通常出勤日
+  var yakuin = {};
+  (CFG.SHIFT_YAKUIN_NAMES || []).forEach(function(n){ yakuin[normText_(n)] = true; });
+  var isYakuinDay = (kind !== null && kind.indexOf('役員出勤') >= 0);
+  var workers = [], presentCount = 0;
+  roster.names.forEach(function(nm){
+    var present = (kind === null) || (isYakuinDay && !!yakuin[nm]);
+    if(present) presentCount++;
+    workers.push({ name: nm, mark: present ? CFG.MARK_PRESENT : '休', present: present });
+  });
+  return {
+    date: ymd, sheet: roster.sheet, source: 'holiday',
+    dayKind: (kind === null) ? '出勤日' : (isYakuinDay ? '役員出勤' : ('会社休み' + (kind ? '（' + kind + '）' : ''))),
+    workers: workers, presentCount: presentCount, totalCount: workers.length
+  };
 }
 
 // ---- 力量表（○/△/×。曽我さんがスプレッドシートを直接編集して調整する運用。保存APIは無い） ----
