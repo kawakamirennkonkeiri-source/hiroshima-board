@@ -86,7 +86,9 @@ var CFG = {
   // ⑫-c Googleカレンダー連携（2026-09-29追加・曽我さん依頼）：会社全体カレンダーの予定のうち、
   //   タイトルに【広島】（半角[広島]も可）が付いたものだけをその日のTODOに出す。
   //   ⚠CalendarAppを初めて使うので、デプロイ前に testTodoCalendar を▶実行して承認が必要。
-  TODO_CALENDAR_ID: 'kawakamirenkon116@gmail.com',
+  //   2026-10-02：会社全体カレンダー（kawakamirenkon116@gmail.com）が共有切れで開けなくなったため、
+  //   曽我さんのカレンダーに切り替え（曽我さん指示）。【広島】付きの予定はこのカレンダーに入れる運用。
+  TODO_CALENDAR_ID: 'kawakamirennkonkeiri@gmail.com',
   TODO_CALENDAR_TAG_RE: /[【\[]\s*広島\s*[】\]]/,
 
   // ===== 🚢 前日ストック（2026-09-29追加）：発注書「発注書」シートの前日行の「ｽﾄｯｸ舟数」を自動で使う。
