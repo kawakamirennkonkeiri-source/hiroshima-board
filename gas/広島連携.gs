@@ -317,7 +317,8 @@ function doGet(e){
     out = { error: String(err && err.message || err) };
   }
   var body = JSON.stringify(out);
-  if(e.parameter.callback){
+  // JSONPのcallback名は英数字・_・$・.だけ許可（任意のJSを実行させないため）
+  if(e.parameter.callback && /^[\w$.]{1,80}$/.test(String(e.parameter.callback))){
     return ContentService.createTextOutput(e.parameter.callback + '(' + body + ');')
       .setMimeType(ContentService.MimeType.JAVASCRIPT);
   }
@@ -348,6 +349,7 @@ function doPost(e){
     else if(action === 'todoLog')           out = todoLogAppend_(body); // ⑫ TODOのチェック/解除を履歴へ1行追記
     else if(action === 'prevStockSave')     out = prevStockSave_(body); // 🚢 前日ストックの当日上書き
     else if(action === 'shizaiAlertsPublish') out = shizaiAlertsPublish_(body); // ⑤ 資材アプリのアラート一覧を受け取る
+    else if(action === 'slackPost')         out = slackPost_(body);   // 資材アプリ「繁忙期の全資材 再確認」の報告（広島チャンネルへ投稿）
     else out = { ok:false, error:'unknown action: ' + action };
     // ⑭ 保存された内容はbundleにも含まれるので、本日ぶんのキャッシュを捨てて次の取得で作り直させる
     //   （＝保存したのに30秒〜数分そのまま古い値が返る、というのを防ぐ）
@@ -820,17 +822,42 @@ function nzStateSave_(body){
   try{
     var date = String(body.date || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
     var now  = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd HH:mm:ss');
-    var payload = {
-      status: (body.status && typeof body.status === 'object') ? body.status : {},
-      targetOverride: (body.targetOverride === null || body.targetOverride === undefined) ? null : (Number(body.targetOverride) || 0)
-    };
     var sh = nzStateSheet_();
     var data = sh.getDataRange().getValues();
     var kept = [ data.length ? data[0] : ['日付', '更新日時', '端末', '入力内容(JSON)'] ];
+    var prev = null;
     for(var i = 1; i < data.length; i++){
       var d0 = data[i][0];
       var dstr = (d0 instanceof Date) ? Utilities.formatDate(d0, CFG.TZ, 'yyyy-MM-dd') : String(d0).trim();
-      if(dstr !== date) kept.push(data[i]);
+      if(dstr !== date){ kept.push(data[i]); continue; }
+      try{ prev = JSON.parse(data[i][3] || '{}') || null; }catch(e){ prev = null; }
+    }
+    // 2026-10-02〜 差分マージ方式：送られてきた項目だけを書き換え、それ以外（他PC・他画面の変更）は残す。
+    //   statusPatch:{キー:状態}（'mikettei'＝解除）／ setTarget:true の時だけ targetOverride を書き換え／
+    //   patch.day.busy（資材アプリの繁忙期再確認）は day.busy に足す。
+    //   旧クライアント（status丸ごと送信）は従来どおり status を置き換える（後方互換）。
+    var payload = (prev && typeof prev === 'object') ? prev : {};
+    if(!payload.status || typeof payload.status !== 'object') payload.status = {};
+    if(typeof payload.targetOverride !== 'number') payload.targetOverride = null;
+    var isPatch = !!(body.statusPatch || body.setTarget || body.patch);
+    if(!isPatch){
+      payload.status = (body.status && typeof body.status === 'object') ? body.status : {};
+      payload.targetOverride = (body.targetOverride === null || body.targetOverride === undefined) ? null : (Number(body.targetOverride) || 0);
+    } else {
+      var sp = (body.statusPatch && typeof body.statusPatch === 'object') ? body.statusPatch : {};
+      Object.keys(sp).forEach(function(k){
+        var st = String(sp[k] || '');
+        if(!st || st === 'mikettei') delete payload.status[k]; else payload.status[k] = st;
+      });
+      if(body.setTarget){
+        payload.targetOverride = (body.targetOverride === null || body.targetOverride === undefined) ? null : (Number(body.targetOverride) || 0);
+      }
+      var busy = body.patch && body.patch.day && body.patch.day.busy;
+      if(busy && typeof busy === 'object'){
+        payload.day = (payload.day && typeof payload.day === 'object') ? payload.day : {};
+        payload.day.busy = (payload.day.busy && typeof payload.day.busy === 'object') ? payload.day.busy : {};
+        Object.keys(busy).forEach(function(k){ payload.day.busy[k] = busy[k]; });
+      }
     }
     kept.push([date, now, String(body.by || ''), JSON.stringify(payload)]);
     sh.clearContents();
@@ -1325,9 +1352,11 @@ function seisanGet_(params){
     var kg    = Number(v[r][6]); if(!kg) kg = funes * size;
     var mk = ampm + '|' + name;
     if(!map[mk]){ map[mk] = { name:name, ampm:ampm, rows:{}, funes:0 }; order.push(mk); }
-    if(grp === '収穫舟数'){ map[mk].funes = funes; continue; }
+    // totalFunes＝生産者カードの「🚢収穫舟数」の合計（荷造り舟数・歩留まりの分母・舟数モニターに使う）。
+    //   規格別の入力（c/s数・C/S/半端のkg）は舟数ではないので足さない（2026-10-02修正。それまではc/sとkgを足していた）。
+    if(grp === '収穫舟数'){ map[mk].funes = funes; totalFunes += funes; continue; }
     if(size > 0 && funes > 0) map[mk].rows[grp + '|' + size] = funes;
-    totalFunes += funes; totalKg += kg;
+    totalKg += kg;
   }
   return { date: date, list: order.map(function(k){ return map[k]; }), totalFunes: totalFunes, totalKg: Math.round(totalKg*10)/10 };
 }
@@ -1341,18 +1370,30 @@ function seisanSave_(body){
     var date = String(body.date || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
     var now  = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd HH:mm');
     var list = (body.list instanceof Array) ? body.list : [];
+    // 2026-10-02〜 keys:['AM|生産者名',…] が来たら、その生産者（時間帯）の行だけを入れ替える
+    //   （他PCが入力した別の生産者の行は残す）。keysが無い旧クライアントは従来どおりその日を丸ごと入れ替え。
+    var onlyKeys = null;
+    if(body.keys instanceof Array){
+      onlyKeys = {};
+      body.keys.forEach(function(k){ onlyKeys[String(k)] = true; });
+    }
+    function seisanRowKey_(ampm, name){
+      return ((String(ampm || 'AM').trim().toUpperCase() === 'PM') ? 'PM' : 'AM') + '|' + String(name || '').trim();
+    }
 
     var data = sh.getDataRange().getValues();
     var kept = [ (data.length ? data[0] : HEAD) ];
     for(var i = 1; i < data.length; i++){
       var d0 = data[i][0];
       var dstr = (d0 instanceof Date) ? Utilities.formatDate(d0, CFG.TZ, 'yyyy-MM-dd') : String(d0).trim();
-      if(dstr !== date) kept.push(data[i]);
+      if(dstr !== date){ kept.push(data[i]); continue; }
+      if(onlyKeys && !onlyKeys[seisanRowKey_(data[i][1], data[i][2])]) kept.push(data[i]);
     }
     var rowsN = 0, totalFunes = 0, totalKg = 0;
     list.forEach(function(p){
       var name = String(p.name || '').trim(); if(!name) return;
       var ampm = (String(p.ampm||'AM').toUpperCase() === 'PM') ? 'PM' : 'AM';
+      if(onlyKeys && !onlyKeys[ampm + '|' + name]) return;
       var rows = (p.rows && typeof p.rows === 'object') ? p.rows : {};
       Object.keys(rows).forEach(function(key){
         var funes = Number(rows[key]) || 0; if(funes <= 0) return;
@@ -1361,7 +1402,7 @@ function seisanSave_(body){
         var size = Number(parts[1]) || 0;
         var kg = funes * size;
         kept.push([date, ampm, name, grp, size, funes, Math.round(kg*10)/10, now]);
-        rowsN++; totalFunes += funes; totalKg += kg;
+        rowsN++;
       });
       var pf = Number(p.funes) || 0;
       if(pf > 0){ kept.push([date, ampm, name, '収穫舟数', 0, pf, 0, now]); rowsN++; }
@@ -1370,7 +1411,9 @@ function seisanSave_(body){
     sh.getRange(1, 1, kept.length, HEAD.length).setValues(kept.map(function(r){
       var a = r.slice(0, HEAD.length); while(a.length < HEAD.length) a.push(''); return a;
     }));
-    return { ok:true, saved: rowsN, date: date, totalFunes: totalFunes, totalKg: Math.round(totalKg*10)/10 };
+    // 保存後のその日の全員分（他PCの入力も含む）を返す＝画面はこれで最新に揃える
+    var after = seisanGet_({ date: date });
+    return { ok:true, saved: rowsN, date: date, list: after.list, totalFunes: after.totalFunes, totalKg: after.totalKg };
   } finally { try{ lock.releaseLock(); }catch(e){} }
 }
 
@@ -1464,26 +1507,45 @@ function hojoSave_(body){
     var date = String(body.date || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
     var now  = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd HH:mm');
     var fields = (body.fields instanceof Array) ? body.fields : [];
+    // 2026-10-02〜 keys:[圃場名,…] が来たら、その圃場の行だけを入れ替える（他PCが入力した別の圃場は残す）。
+    //   keysが無い旧クライアントは従来どおりその日を丸ごと入れ替え。
+    var onlyKeys = null;
+    if(body.keys instanceof Array){
+      onlyKeys = {};
+      body.keys.forEach(function(k){ onlyKeys[String(k).trim()] = true; });
+    }
 
     var data = sh.getDataRange().getValues();
     var kept = [ (data.length ? data[0] : HEAD) ];
     for(var i = 1; i < data.length; i++){
       var d0 = data[i][0];
       var dstr = (d0 instanceof Date) ? Utilities.formatDate(d0, CFG.TZ, 'yyyy-MM-dd') : String(d0).trim();
-      if(dstr !== date) kept.push(data[i]);
+      if(dstr !== date){ kept.push(data[i]); continue; }
+      if(onlyKeys && !onlyKeys[String(data[i][1] || '').trim()]) kept.push(data[i]);
     }
     var rowsN = 0, total = 0;
     fields.forEach(function(f){
       var name = String(f.name || '').trim(); if(!name) return;
+      if(onlyKeys && !onlyKeys[name]) return;
       var funes = Math.max(0, Math.round(Number(f.funes) || 0));
       kept.push([date, name, funes, now]);
-      rowsN++; total += funes;
+      rowsN++;
     });
     sh.clearContents();
     sh.getRange(1, 1, kept.length, HEAD.length).setValues(kept.map(function(r){
       var a = r.slice(0, HEAD.length); while(a.length < HEAD.length) a.push(''); return a;
     }));
-    return { ok:true, saved: rowsN, date: date, total: total };
+    // その日の全圃場（他PCの入力も含む）を返す＝画面はこれで最新に揃える（朝礼ボードは読まない＝軽い）
+    var all = [];
+    for(var j = 1; j < kept.length; j++){
+      var dj = kept[j][0];
+      var ds = (dj instanceof Date) ? Utilities.formatDate(dj, CFG.TZ, 'yyyy-MM-dd') : String(dj).trim();
+      if(ds !== date) continue;
+      var nm = String(kept[j][1] || '').trim(); if(!nm) continue;
+      var fn = Number(kept[j][2]) || 0;
+      all.push({ name: nm, funes: fn }); total += fn;
+    }
+    return { ok:true, saved: rowsN, date: date, total: total, fields: all };
   } finally { try{ lock.releaseLock(); }catch(e){} }
 }
 
@@ -2614,6 +2676,28 @@ function getNewsCached_(force){
   // エラー（未設定・権限不足）も短くキャッシュして、Slackを叩き続けないようにする
   cachePut_(key, JSON.stringify(out), CFG.NEWS_CACHE_SEC);
   return out;
+}
+// 資材アプリ「繁忙期の全資材 再確認」の報告を広島チャンネルへ投稿する（2026-10-02追加）。
+//   Botに chat:write 権限が無い等で失敗しても {ok:false,error} を返すだけ（資材アプリ側は記録を優先して続行する）。
+function slackPost_(body){
+  body = body || {};
+  var msg = String(body.msg || '').trim().slice(0, 300);
+  if(!msg) return { ok:false, error:'msg が空です' };
+  var props   = PropertiesService.getScriptProperties();
+  var token   = props.getProperty('SLACK_BOT_TOKEN') || '';
+  var channel = props.getProperty('SLACK_CHANNEL_ID') || '';
+  if(!token || !channel) return { ok:false, error:'SLACK_BOT_TOKEN / SLACK_CHANNEL_ID が未設定です' };
+  var res = UrlFetchApp.fetch('https://slack.com/api/chat.postMessage', {
+    method: 'post',
+    contentType: 'application/json; charset=utf-8',
+    headers: { Authorization: 'Bearer ' + token },
+    payload: JSON.stringify({ channel: channel, text: msg }),
+    muteHttpExceptions: true
+  });
+  var data = {};
+  try{ data = JSON.parse(res.getContentText()) || {}; }catch(e){}
+  if(!data.ok) return { ok:false, error:'Slack: ' + (data.error || ('HTTP ' + res.getResponseCode())) + (data.error === 'missing_scope' ? '（Botに chat:write 権限がありません）' : '') };
+  return { ok:true };
 }
 function fetchHiroshimaNotices_(){
   var props   = PropertiesService.getScriptProperties();

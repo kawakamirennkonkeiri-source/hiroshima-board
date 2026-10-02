@@ -28,7 +28,7 @@
   body.kiosk #fn-kiosk-exit{ display:block; }
   body.kiosk .view{ max-width:none; }
 
-  /* ===== 本日進捗タブ（センター電子黒板のカード/予測ストリップ構成に合わせる） ===== */
+  /* ===== 電子黒板ホーム・本日荷造りタブ（センター電子黒板のカード/予測ストリップ構成に合わせる） ===== */
   .card{ background:var(--surface-1); border:1px solid var(--border); border-radius:14px; padding:16px 18px; margin-bottom:16px; }
   .card > h3{ margin:0 0 12px; font-size:15px; font-weight:800; color:var(--text-primary); display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
   .card > h3 .tag{ font-size:11px; font-weight:700; color:var(--muted); background:var(--surface-0); padding:2px 9px; border-radius:10px; }
@@ -270,7 +270,7 @@
   .haichi-skill-btn.v-warn{ background:#fff6e6; border-color:var(--amber); color:var(--amber); }
   .haichi-skill-btn.v-bad{ background:var(--red); border-color:var(--red); color:#fff; }
 
-  /* ===== 圃場（畑）タブ（センター電子黒板の簡易版。生産DX連携が無いため手入力のみ） ===== */
+  /* ===== 圃場（畑）タブ（センター電子黒板の簡易版。圃場名は朝礼ボードから自動・舟数は手入力） ===== */
   .hojo-card{ background:var(--surface-1); border:1px solid var(--border); border-radius:14px; padding:14px 16px; display:flex; flex-direction:column; gap:10px; }
   .hojo-card .top{ display:flex; align-items:center; gap:8px; }
   .hojo-card .dx-badge{ font-size:10px; font-weight:800; color:var(--blue-deep); background:var(--surface-0); border:1px solid var(--grid); border-radius:10px; padding:1px 7px; white-space:nowrap; }
@@ -444,7 +444,7 @@
     <div class="seisan-head">
       <div class="ttl">🧑‍🌾 生産者　持ち込み量・出来高の記録　<span id="seisan-date-label" class="seisan-date"></span></div>
       <div class="seisan-status" id="seisan-status"></div>
-      <div class="seisan-total">本日合計　合計 <b id="seisan-total-kg">0</b>kg ／ C <b id="seisan-total-c">0</b>kg ／ S <b id="seisan-total-s">0</b>kg　<span style="font-size:11px;color:var(--muted);font-weight:700;">（<b id="seisan-total-funes">0</b> c/s）</span></div>
+      <div class="seisan-total">本日合計　🚢収穫 <b id="seisan-total-hfunes">0</b>舟 ／ C・S以外 <b id="seisan-total-kg">0</b>kg ／ C <b id="seisan-total-c">0</b>kg ／ S <b id="seisan-total-s">0</b>kg　<span style="font-size:11px;color:var(--muted);font-weight:700;">（<b id="seisan-total-funes">0</b> c/s）</span></div>
     </div>
     <div class="seisan-add">
       <span class="lbl">生産者を追加：</span>
@@ -509,7 +509,7 @@
   </div>
 </div>
 
-<!-- ===== 圃場（畑）タブ（手入力のみ。生産DX連携は広島には無いため簡易版） ===== -->
+<!-- ===== 圃場（畑）タブ（圃場名は「【広島】朝礼ボード_データ」から自動・舟数は手入力） ===== -->
 <div id="view-hojo" class="view">
   <div class="card">
     <h3>🚜 圃場（畑）から持ってきた舟数 <span class="tag" id="hojo-date-label"></span></h3>
@@ -522,7 +522,7 @@
     <div id="hojo-list" class="seisan-list" style="margin-top:14px;"></div>
     <div class="empty-note" id="hojo-empty">今日の圃場を読み込み中… 「【広島】朝礼ボード_データ」に本日の圃場が登録されると、ここに🔗朝礼の付いた圃場が自動で並びます。無い分だけ上の欄で手動追加できます。</div>
   </div>
-  <div class="foot-note">🔗朝礼の付いた圃場は「【広島】朝礼ボード_データ」（A列＝日付・B列＝圃場名。読み取り専用）から毎回自動で反映されます。保存先：【広島】電子黒板データ内「圃場舟数」シート。歩留まりの舟数（分母）は、ここでの本日合計と生産者タブの収穫舟数を使います（未入力の日は発注書シートの値を暫定的に使います）。</div>
+  <div class="foot-note">🔗朝礼の付いた圃場は「【広島】朝礼ボード_データ」（A列＝日付・B列＝圃場名。読み取り専用）から毎回自動で反映されます。保存先：【広島】電子黒板データ内「圃場舟数」シート。歩留まりの舟数（分母）は、ここでの本日合計と生産者タブの「🚢収穫舟数」の合計を使います（圃場が未入力の日は発注書シートの値を暫定的に使います）。</div>
 </div>
 
 <!-- ===== 舟数モニター（もう1台の液晶用。圃場＋生産者の“いまの舟数”を遠くからでも読めるように） ===== -->
@@ -552,15 +552,16 @@
 </div>
 
 <script>
-  /* ★デプロイ後、Apps ScriptのWebアプリURLをここに貼る */
+  /* Apps ScriptのWebアプリURL（GASを「新しいデプロイ」で作り直した時だけ差し替える。通常の再デプロイ＝バージョン更新ではURLは変わらない） */
   const GAS_URL = 'https://script.google.com/macros/s/AKfycbzvyoaRFRlG5LJ30FEoCjwUvhObb6p6jIULlgwWg6sdfTCBF54JbCR5n61Bve7Uktog/exec';
 
   function jsonp_(url, cb){
     var name = 'cb_' + Date.now() + '_' + Math.floor(Math.random()*1e6);
     // GAS応答が12〜15秒前後かかることがあり、12秒だと正常応答なのにタイムアウト扱いになっていたため25秒に延長（2026-09-22）
-    var timer = setTimeout(function(){ if(window[name]){ delete window[name]; cb(null, 'timeout'); } }, 25000);
-    window[name] = function(data){ clearTimeout(timer); delete window[name]; cb(data, null); };
     var s = document.createElement('script');
+    // 終わったscriptタグは毎回取り除く（つけっぱなしの黒板で1日に数千個たまらないように）
+    var timer = setTimeout(function(){ if(window[name]){ window[name] = function(){ delete window[name]; }; s.remove(); cb(null, 'timeout'); } }, 25000);
+    window[name] = function(data){ clearTimeout(timer); delete window[name]; s.remove(); cb(data, null); };
     s.src = url + (url.indexOf('?')>=0?'&':'?') + 'callback=' + name;
     s.onerror = function(){ clearTimeout(timer); delete window[name]; cb(null, 'network'); s.remove(); };
     document.body.appendChild(s);
@@ -647,9 +648,18 @@
   //   で先に出し、控えが古ければ裏で最新（約12秒）を取り直して入れ替える。
   function nzDaysLsKey_(){ return 'hb_nzd_' + todayStr_() + '_' + nzViewStart_() + '_' + NZ_DAYS_WANTED; }
   var _nzLoadSeq = 0;
+  // 2026-10-02〜 入力中・保存直後は一覧を作り直さない（30秒ごとの再描画で、打っている途中の数字や
+  //   まだ保存が届いていない数字が消える／元に戻るのを防ぐ）。次の30秒で改めて描画される。
+  var _nzLastEditAt = 0;
+  function nzMarkEdit_(){ _nzLastEditAt = Date.now(); }
+  function nzRenderBlocked_(reqStartedAt){
+    var a = document.activeElement, wrap = document.getElementById('nizukuri-days');
+    if(a && wrap && wrap.contains(a) && a.tagName === 'INPUT') return true;
+    return _nzLastEditAt && (_nzLastEditAt > reqStartedAt - 8000);
+  }
   function nzLoadDaysNow_(first){
-    var key = nzDaysLsKey_(), seq = ++_nzLoadSeq;
-    if(first){
+    var key = nzDaysLsKey_(), seq = ++_nzLoadSeq, startedAt = Date.now();
+    if(first && !nzRenderBlocked_(startedAt)){
       try{ var o = JSON.parse(localStorage.getItem(key) || 'null'); if(o && o.days) renderNizukuriDays_(o.days); }catch(e){}
     }
     var q = { days: NZ_DAYS_WANTED, date: nzViewStart_() };
@@ -657,8 +667,8 @@
     gasGet_('nizukuriFullDays', q, function(data, err){
       if(seq !== _nzLoadSeq) return;   // 後から出した取得がある＝この応答は古いので捨てる
       if(!err && data && data.days){
-        renderNizukuriDays_(data.days);
         try{ localStorage.setItem(key, JSON.stringify({ at: Date.now(), days: data.days })); }catch(e){}
+        if(!nzRenderBlocked_(startedAt)) renderNizukuriDays_(data.days);
       }
       if(first && (err || !data || data._stale)) nzLoadDaysNow_(false);   // 控えが古い／無い → 最新を取り直す
     });
@@ -759,7 +769,9 @@
     cards.push({ lbl: '荷造り予定㎏', val: (planFune != null ? Math.round(planFune * 50) : '―'), u: 'kg', sub: '本日の荷造り舟数 × 50kg' });
     if(LAST_NIZUKURI && !LAST_NIZUKURI.error){
       // ⑦ 終了目標時刻＝本日の合計数量（数量変更で上書き可）÷（出勤人数×2舟/時）
-      var ft = LAST_NIZUKURI.finishTime || (LAST_NIZUKURI.targetFunes ? '本日中は厳しい見込み' : '―');
+      // 出勤人数が0・未取得の時は計算できないだけなので「―」（「厳しい見込み」と誤表示しない）
+      var workers = (LAST_SHIFT && !LAST_SHIFT.error) ? Number(LAST_SHIFT.presentCount) || 0 : 0;
+      var ft = LAST_NIZUKURI.finishTime || ((LAST_NIZUKURI.targetFunes && workers > 0) ? '本日中は厳しい見込み' : '―');
       cards.push({ lbl: '終了目標時刻', val: ft, sub: '本日の合計数量 ÷（出勤人数×2舟/時）' });
     }
 
@@ -842,7 +854,7 @@
         '<div class="idx">' + (idx + 1) + '</div>' +
         '<div class="cust">' + escHtml_(o.cust) + (o.kubun ? '<span class="bunrui ' + nzBunruiClass_(o.kubun) + '">' + escHtml_(o.kubun) + '</span>' : '') + (isKg ? '<span class="bunrui b-kg">kg</span>' : '') + (o.isNew ? '<span class="new-flag">NEW</span>' : '') + '</div>' +
         '<div class="nyusu">' + (isKg ? '<small>kgで入力</small>' : (o.nyusu ? '入数 ' + escHtml_(String(o.nyusu)) : '<small>入数 —</small>')) + '</div>' +
-        '<button class="nz-status" data-st="' + o.state + '" onclick="nzStateCycle(\'' + escAttr_(o.key) + '\')">' + nzStateMark_(o.state) + ' ' + escHtml_(nzStateLabel_(o.state)) + '</button>' +
+        '<button class="nz-status" data-st="' + o.state + '" onclick="nzStateCycle(\'' + escJsAttr_(o.key) + '\')">' + nzStateMark_(o.state) + ' ' + escHtml_(nzStateLabel_(o.state)) + '</button>' +
       '</div>' +
       '<div class="qc4">' +
         '<div class="qi total"><span class="ql">合計</span><span class="cs">' + escHtml_(String(Math.round(o.qty || 0))) + '<small>' + U + '</small></span><span class="qkg">' + nzKgLine_(o, Math.round(o.qty || 0)) + '</span></div>' +
@@ -896,6 +908,7 @@
     var oldVal = Number(o.prodLog[d]) || 0;
     var delta = newVal - oldVal;
     if(!delta) return;
+    nzMarkEdit_();
     o.prodLog[d] = newVal;
     o.madePrev = Math.max(0, (o.madePrev || 0) + delta);
     o.rest = Math.round(o.qty || 0) - o.madePrev - (o.madeToday || 0);
@@ -947,6 +960,7 @@
     var o = (item.data.orders || []).filter(function(x){ return x.key === key; })[0];
     if(!o) return;
     var cases = Math.max(0, Math.round(Number(el.value) || 0));
+    nzMarkEdit_();
     o.madeToday = cases;
     o.prodLog = o.prodLog || {}; o.prodLog[todayStr_()] = cases;
     o.rest = Math.round(o.qty || 0) - (o.madePrev || 0) - cases;
@@ -984,33 +998,33 @@
     var o = (item.data.orders || []).filter(function(x){ return x.key === key; })[0];
     if(!o) return;
     o.state = nzStateNext_(o.state);
+    nzMarkEdit_();
     nzRenderDayItems_();
-    nzPushDayState_(item);
+    nzPushDayState_(item, o.key, o.state);
   }
-  var nzDayStateSaveTimers = {};
-  function nzPushDayState_(item){
+  // 2026-10-02〜 状態は「押した注文だけ」、数量変更は「数量だけ」を送る差分方式（GAS側でマージ）。
+  //   以前は画面に持っている古い一覧で、その日の状態・数量変更を丸ごと上書きしていたため、
+  //   別画面・別PCで直前に変えた内容が戻ってしまっていた。
+  var nzDayStateSaveTimers = {}, nzDayStatePatch = {};
+  function nzPushDayState_(item, key, state){
     var date = item.date;
+    nzDayStatePatch[date] = nzDayStatePatch[date] || {};
+    nzDayStatePatch[date][key] = state || 'mikettei';
     if(nzDayStateSaveTimers[date]) clearTimeout(nzDayStateSaveTimers[date]);
     nzDayStateSaveTimers[date] = setTimeout(function(){
-      var status = {};
-      (item.data.orders || []).forEach(function(o){ if(o.state && o.state !== 'mikettei') status[o.key] = o.state; });
-      gasPost_('nizukuriStateSave', {
-        date: date, status: status,
-        targetOverride: (item.data.targetOverride != null ? item.data.targetOverride : null),
-        by: deviceLabel_()
-      }, function(d, err){});
+      var patch = nzDayStatePatch[date] || {};
+      delete nzDayStatePatch[date]; delete nzDayStateSaveTimers[date];
+      gasPost_('nizukuriStateSave', { date: date, statusPatch: patch, by: deviceLabel_() }, function(d, err){});
     }, 500);
   }
-  // ---- 電子黒板ホームタブ（📊）の「本日の合計数量」バー専用：常に"今日"のLAST_NIZUKURIを対象にする ----
+  // ---- 電子黒板ホームタブ（📊）の「本日の合計数量」バー専用：数量変更（targetOverride）だけを送る ----
   var nzTodayStateSaveTimer = null;
   function nzPushTodayState_(){
     if(!LAST_NIZUKURI) return;
     if(nzTodayStateSaveTimer) clearTimeout(nzTodayStateSaveTimer);
     nzTodayStateSaveTimer = setTimeout(function(){
-      var status = {};
-      (LAST_NIZUKURI.orders || []).forEach(function(o){ if(o.state && o.state !== 'mikettei') status[o.key] = o.state; });
       gasPost_('nizukuriStateSave', {
-        date: LAST_NIZUKURI.date, status: status,
+        date: LAST_NIZUKURI.date || todayStr_(), setTarget: true,
         targetOverride: (LAST_NIZUKURI.targetOverride != null ? LAST_NIZUKURI.targetOverride : null),
         by: deviceLabel_()
       }, function(d, err){});
@@ -1206,6 +1220,8 @@
   function deviceLabel_(){ try{ return (navigator.platform||'PC')+'/'+(screen.width||'')+'x'+(screen.height||''); }catch(e){ return 'PC'; } }
   function escHtml_(s){ return String(s==null?'':s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
   function escAttr_(s){ return escHtml_(s); }
+  // onclick="f('…')" の中に埋め込む文字列用：JSの文字列として壊れないよう \ と ' を先にエスケープしてからHTML属性用に変換
+  function escJsAttr_(s){ return escHtml_(String(s==null?'':s).replace(/\\/g,'\\\\').replace(/'/g,"\\'").replace(/\r?\n/g,'\\n')); }
 
   bundlePaintFromLocal_();   // ⑭ まず前回の内容で即描画（通信を待たずに画面が出る）
   loadBundle_();
@@ -1305,9 +1321,11 @@
      「【広島】電子黒板データ」の『広島TODOマスタ』シート（A=業務／B=頻度）に行を足すだけで
      ここに出る（GAS再デプロイ不要）。チェックはその場で見た目が変わり、GASの『TODO履歴』へ
      1行追記される（上書きしない＝誰がいつ押したかが残る）。状態は履歴の最新行から組み立てる。 */
-  var TODO_MASTER = [];        // 本日出すぶんだけ（GAS側が頻度で絞り込んで返す）
-  var TODO_MASTER_COUNT = 0;   // マスタの総件数（「本日は該当なし」と「マスタが空」を区別するため）
-  var TODO_STATE  = {};
+  // ※起動直後に前回のbundleで先に描画した内容（bundlePaintFromLocal_）を消さないよう、既に値があれば引き継ぐ
+  var TODO_MASTER = TODO_MASTER || [];             // 本日出すぶんだけ（GAS側が頻度で絞り込んで返す）
+  var TODO_MASTER_COUNT = TODO_MASTER_COUNT || 0;  // マスタの総件数（「本日は該当なし」と「マスタが空」を区別するため）
+  var TODO_STATE  = TODO_STATE || {};
+  var _todoLoaded = _todoLoaded || false;          // 一度でもGAS（またはbundleの控え）から受け取ったか
   var _todoPending = 0;   // 送信中の件数（>0の間はbundleからの状態上書きを止める＝自分の操作を潰さない）
   function todoLocalKey_(){ return 'hb_todo_' + todayStr_(); }
   function todoLoadLocal_(){ try{ TODO_STATE = JSON.parse(localStorage.getItem(todoLocalKey_()) || '{}') || {}; }catch(e){ TODO_STATE = {}; } }
@@ -1320,6 +1338,7 @@
     if(!TODO_MASTER) TODO_MASTER = [];
     if(!TODO_STATE)  TODO_STATE = {};
     if(!TODO_MASTER.length){
+      if(!_todoLoaded){ box.innerHTML = '<div class="todo-empty">TODOを読み込み中…</div>'; return; }
       // マスタ自体が空なのか、マスタはあるが「本日は該当なし」なのかを区別して出す
       box.innerHTML = TODO_MASTER_COUNT
         ? '<div class="todo-empty">本日やるTODOはありません。<br><span style="font-size:11px;">（「広島TODOマスタ」の頻度欄から、その日に出すものだけを表示しています）</span></div>'
@@ -1349,6 +1368,7 @@
   }
   function todoApply_(d){
     if(!d || d.error) return;
+    _todoLoaded = true;
     if(Array.isArray(d.items)) TODO_MASTER = d.items;
     if(typeof d.masterCount === 'number') TODO_MASTER_COUNT = d.masterCount;
     if(d.state && !_todoPending){ TODO_STATE = d.state; todoSaveLocal_(); }
@@ -1392,7 +1412,7 @@
     seisanLoadLocal();
     seisanLoadLive();
   }
-  function seisanOnOpen(){ seisanInit(); seisanRender(); }
+  function seisanOnOpen(){ seisanInit(); seisanRollDate_(); seisanRender(); }
 
   function seisanRenderNameBtns(){
     var box=document.getElementById('seisan-namebtns'); if(!box) return;
@@ -1411,6 +1431,7 @@
       }
     }
     SEISAN.list.push({ name:nm, ampm:SEISAN_AMPM, rows:{} });
+    seisanDirtyMark_(SEISAN_AMPM, nm);
     seisanRender(); seisanPushSave();
   }
   function seisanPickAmpm(v){
@@ -1421,6 +1442,7 @@
     var inp=document.getElementById('seisan-newname'); if(!inp) return;
     var nm=(inp.value||'').trim(); if(!nm) return;
     SEISAN.list.push({ name:nm, ampm:SEISAN_AMPM, rows:{} });
+    seisanDirtyMark_(SEISAN_AMPM, nm);
     inp.value=''; inp.focus();
     seisanRender(); seisanPushSave();
   }
@@ -1436,6 +1458,7 @@
   }
   function seisanKgOf(p){ var o=seisanKgSplit(p); return o.main+o.C+o.S; }
   function seisanDel(i){
+    var p=SEISAN.list[i]; if(p) seisanDirtyMark_(p.ampm, p.name);
     SEISAN.list.splice(i,1);
     seisanRender(); seisanPushSave();
   }
@@ -1443,18 +1466,22 @@
     var p=SEISAN.list[i]; if(!p) return;
     var n=Number(val)||0;
     if(n>0) p.rows[key]=n; else delete p.rows[key];
+    seisanDirtyMark_(p.ampm, p.name);
     seisanRenderTotals();
     seisanPushSave();
   }
   function seisanSetFunes(i, val){
     var p=SEISAN.list[i]; if(!p) return;
     p.funes = Number(val)||0;
+    seisanDirtyMark_(p.ampm, p.name);
+    seisanRenderTotals(); seisanSyncHome_();
     seisanPushSave();
   }
   function seisanSetAmpm(i, v){
     var p=SEISAN.list[i]; if(!p) return;
     var nx=(v==='PM'?'PM':'AM');
     for(var j=0;j<SEISAN.list.length;j++){ if(j!==i && SEISAN.list[j].name===p.name && SEISAN.list[j].ampm===nx){ seisanSetStatus('「'+p.name+'（'+(nx==='PM'?'午後':'午前')+'）」は既に登録済みです','#a76a00'); return; } }
+    seisanDirtyMark_(p.ampm, p.name); seisanDirtyMark_(nx, p.name);
     p.ampm=nx; seisanRender(); seisanPushSave();
   }
   function seisanTotalFunes(){ var s=0; (SEISAN.list||[]).forEach(function(p){ s+=Number(p.funes)||0; }); return s; }
@@ -1467,6 +1494,7 @@
     set('seisan-total-c',  seisanFmtKg(Tc));
     set('seisan-total-s',  seisanFmtKg(Ts));
     set('seisan-total-funes', Tcs.toLocaleString('ja-JP'));
+    set('seisan-total-hfunes', seisanTotalFunes().toLocaleString('ja-JP'));
   }
 
   function seisanRender(){
@@ -1501,20 +1529,40 @@
     var empty=document.getElementById('seisan-empty'); if(empty) empty.style.display=SEISAN.list.length?'none':'block';
   }
 
-  var _seisanDirty=false;
+  // 2026-10-02〜 変更した生産者（時間帯|名前）だけを送る差分保存＋30秒ごとの読み直し＋日付またぎ対応。
+  //   以前は開いた時の一覧でその日を丸ごと上書きしていたため、別PCの入力が消えることがあった。
+  var _seisanDirty=false, _seisanDirtyKeys={}, _seisanInflight=0;
+  function seisanDirtyMark_(ampm, name){ _seisanDirtyKeys[((ampm==='PM')?'PM':'AM')+'|'+String(name||'').trim()]=true; }
+  function seisanHasPending_(){ return _seisanDirty || _seisanInflight>0 || Object.keys(_seisanDirtyKeys).length>0; }
+  // ホーム・舟数モニターの「生産者」＝収穫舟数の合計を、保存を待たずにその場で反映
+  function seisanSyncHome_(){
+    if(SEISAN.date !== todayStr_()) return;
+    LAST_SEISAN = Object.assign({}, LAST_SEISAN || {}, { date: SEISAN.date, totalFunes: seisanTotalFunes() });
+    try{ renderMainStats_(); fnRender(); }catch(e){}
+  }
   function seisanApplyLive_(data){
     if(!data || data.error || data.date!==SEISAN.date) return false;
     SEISAN.list = data.list || [];
-    seisanSaveLocal(); seisanRender();
+    seisanSaveLocal();
+    var a=document.activeElement, wrap=document.getElementById('seisan-list');
+    if(!(a && wrap && wrap.contains(a))) seisanRender();   // 入力中のカードは作り直さない
+    seisanSyncHome_();
     var t=new Date(); seisanSetStatus('🟢 保存済み '+('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2),'var(--green)');
     return true;
   }
-  function seisanLoadLive(){
+  function seisanLoadLive(silent){
     if(!GAS_URL || GAS_URL.indexOf('http')!==0){ seisanSetStatus('ローカル保存のみ（GAS_URL未設定）','var(--muted)'); seisanRender(); return; }
-    seisanSetStatus('読み込み中…','var(--muted)');
-    gasGet_('seisanGet', { date: SEISAN.date }, function(data, err){
+    if(!silent) seisanSetStatus('読み込み中…','var(--muted)');
+    var reqDate = SEISAN.date;
+    gasGet_('seisanGet', { date: reqDate }, function(data, err){
+      if(reqDate !== SEISAN.date) return;
+      if(silent){ if(!err && !seisanHasPending_()) seisanApplyLive_(data); return; }
+      if(seisanHasPending_()) return;   // 読み込み中に入力された＝そちらの保存を優先
       if(err || !seisanApplyLive_(data)){
-        if(SEISAN.list && SEISAN.list.length){ seisanSetStatus('🟢 接続OK（ローカル入力分を保存中…）','var(--green)'); seisanRender(); seisanPushSave(); }
+        if(SEISAN.list && SEISAN.list.length){
+          SEISAN.list.forEach(function(p){ seisanDirtyMark_(p.ampm, p.name); });   // ローカルにしか無い入力を送る
+          seisanSetStatus('🟢 接続OK（ローカル入力分を保存中…）','var(--green)'); seisanRender(); seisanPushSave();
+        }
         else { seisanSetStatus(err ? ('🟡 通信失敗（ローカル表示）') : '🟢 保存先に接続OK', err?'#a76a00':'var(--green)'); seisanRender(); }
       }
     });
@@ -1527,19 +1575,45 @@
     _seisanDirty=true;
     seisanSetStatus('保存中…','var(--muted)');
     seisanSaveTimer=setTimeout(function(){
-      gasPost_('seisanSave', { date:SEISAN.date, list:SEISAN.list }, function(d, err){
-        if(d && d.ok){ _seisanDirty=false; var t=new Date(); seisanSetStatus('🟢 保存済み '+('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2),'var(--green)'); }
-        else { seisanSetStatus('🟡 保存エラー（ローカルには保持）','#a76a00'); }
+      seisanSaveTimer=null;
+      var keys=Object.keys(_seisanDirtyKeys); _seisanDirtyKeys={}; _seisanDirty=false;
+      if(!keys.length) return;
+      var date=SEISAN.date;
+      var list=SEISAN.list.filter(function(p){ return keys.indexOf(((p.ampm==='PM')?'PM':'AM')+'|'+String(p.name||'').trim())>=0; });
+      _seisanInflight++;
+      gasPost_('seisanSave', { date:date, keys:keys, list:list }, function(d, err){
+        _seisanInflight=Math.max(0,_seisanInflight-1);
+        if(d && d.ok){
+          var t=new Date(); seisanSetStatus('🟢 保存済み '+('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2),'var(--green)');
+          // 他PCの入力も含めたその日の全員分が返ってくる（新GAS）。まだ送っていない変更が無ければ画面を揃える
+          if(d.list && d.date===SEISAN.date && !seisanHasPending_()) seisanApplyLive_({ date:d.date, list:d.list });
+        }
+        else {
+          keys.forEach(function(k){ _seisanDirtyKeys[k]=true; });   // 次の保存でもう一度送る
+          seisanSetStatus('🟡 保存エラー（ローカルには保持）','#a76a00');
+        }
       });
     }, 700);
   }
+  // 日付が変わっていたら今日の分に切り替える（開きっぱなしで翌朝入力して前日に保存される、を防ぐ）
+  function seisanRollDate_(){
+    if(!seisanInited) return false;
+    var td=seisanTodayStr(); if(SEISAN.date===td) return false;
+    SEISAN.date=td; SEISAN.list=[]; _seisanDirtyKeys={}; _seisanDirty=false;
+    var lbl=document.getElementById('seisan-date-label'); if(lbl) lbl.textContent='（'+SEISAN.date+'）';
+    seisanLoadLocal(); seisanRender(); seisanLoadLive();
+    return true;
+  }
+  setInterval(function(){
+    if(!seisanInited) return;
+    if(seisanRollDate_()) return;
+    var v=document.getElementById('view-seisan');
+    if(v && v.classList.contains('show') && !seisanHasPending_()) seisanLoadLive(true);
+  }, 30000);
 
   /* ===== 配置図タブ =====
-     優先番号・乱数タイブレーク・増員枠2パスなど、センターの配置図が持つ複雑な仕組みは
-     実装しない（広島は全員○スタート・7ゾーンの小規模運用のため意味が無い）。
-     力量表の「×」だけを「そのゾーンに配置してよいか」のフィルタに使い、ゾーン順＋出勤者の
-     登場順（＝シフト表の行順）で定員まで詰める1パスの自動配置にとどめる。
-     優先度付けが必要になったら center-skill の haichi.html（配置優先シート＋乱数タイブレーク）を参照。 */
+     乱数タイブレーク・増員枠2パスなど、センターの配置図が持つ複雑な仕組みは実装しない
+     （広島は7ゾーンの小規模運用）。自動配置はゾーン優先度→配置優先番号の順で並べ、力量表の×は除外する。 */
   var HAICHI = null;
   var haichiAddingZone = null;
 
@@ -1703,7 +1777,7 @@
     var roster = haichiRoster_();
     box.innerHTML = roster.length ? roster.map(function(r){
       return '<label class="' + (r.checked ? '' : 'off') + '"><input type="checkbox" ' + (r.checked ? 'checked' : '') +
-        ' onchange="haichiToggleAttend(\'' + escAttr_(r.name) + '\',\'' + r.source + '\',this.checked)">' +
+        ' onchange="haichiToggleAttend(\'' + escJsAttr_(r.name) + '\',\'' + r.source + '\',this.checked)">' +
         escHtml_(r.name) + (r.source === 'extra' ? ' <span style="opacity:.6">（応援）</span>' : '') + '</label>';
     }).join('') : '<span style="font-size:12px;color:var(--muted);">本日の出勤者がいません（シフト表を確認してください）</span>';
   }
@@ -1724,7 +1798,7 @@
         var pos = haichiSlotPos_(z.id, i);
         var nm = list[i];
         html += '<div class="haichi-slot' + (nm ? ' filled' : '') + '" style="left:' + pos.left + '%;top:' + pos.top + '%;" ' +
-          'onclick="haichiSlotClick(\'' + z.id + '\',' + (nm ? '\'' + escAttr_(nm) + '\'' : 'null') + ')">' +
+          'onclick="haichiSlotClick(\'' + z.id + '\',' + (nm ? '\'' + escJsAttr_(nm) + '\'' : 'null') + ')">' +
           (nm ? escHtml_(nm) : '') + '</div>';
       }
     });
@@ -1733,7 +1807,7 @@
     html += '<div class="haichi-pool-region" style="left:' + pr.left + '%;top:' + pr.top + '%;width:' + pr.width + '%;height:' + pr.height + '%;">' +
       '<div class="cap">🧍 未配置</div><div class="flow">' +
       (unassigned.length ? unassigned.map(function(nm){
-        return '<div class="haichi-pool-chip' + (haichiSelectedPerson === nm ? ' sel' : '') + '" onclick="haichiPoolChipClick(\'' + escAttr_(nm) + '\')">' + escHtml_(nm) + '</div>';
+        return '<div class="haichi-pool-chip' + (haichiSelectedPerson === nm ? ' sel' : '') + '" onclick="haichiPoolChipClick(\'' + escJsAttr_(nm) + '\')">' + escHtml_(nm) + '</div>';
       }).join('') : '') + '</div></div>';
     box.innerHTML = html;
   }
@@ -1773,7 +1847,7 @@
       var sk = HAICHI.skills[nm] || {};
       var cells = HAICHI.zones.map(function(z){
         var v = sk[z.id] || '○';
-        return '<td><button class="haichi-skill-btn ' + haichiSkillBtnClass_(v) + '" onclick="haichiSkillCycle(\'' + escAttr_(nm) + '\',\'' + z.id + '\')">' + v + '</button></td>';
+        return '<td><button class="haichi-skill-btn ' + haichiSkillBtnClass_(v) + '" onclick="haichiSkillCycle(\'' + escJsAttr_(nm) + '\',\'' + z.id + '\')">' + v + '</button></td>';
       }).join('');
       return '<tr><td>' + escHtml_(nm) + '</td>' + cells + '</tr>';
     }).join('');
@@ -1809,7 +1883,7 @@
       var pr = HAICHI.prio[nm] || {};
       var cells = HAICHI.zones.map(function(z){
         var v = pr[z.id] || '';
-        return '<td><button class="haichi-prio-btn ' + haichiPrioBtnClass_(v) + '" onclick="haichiPrioCycle(\'' + escAttr_(nm) + '\',\'' + z.id + '\')">' + (v || '―') + '</button></td>';
+        return '<td><button class="haichi-prio-btn ' + haichiPrioBtnClass_(v) + '" onclick="haichiPrioCycle(\'' + escJsAttr_(nm) + '\',\'' + z.id + '\')">' + (v || '―') + '</button></td>';
       }).join('');
       return '<tr><td>' + escHtml_(nm) + '</td>' + cells + '</tr>';
     }).join('');
@@ -1919,33 +1993,39 @@
     hojoLoadLocal();
     hojoLoadLive();
   }
-  function hojoOnOpen(){ hojoInit(); hojoRender(); }
+  function hojoOnOpen(){ hojoInit(); hojoRollDate_(); hojoRender(); }
 
   function hojoAddField(){
     var inp=document.getElementById('hojo-newname'); if(!inp) return;
     var nm=(inp.value||'').trim(); if(!nm) return;
     if(HOJO.fields.some(function(f){ return f.name===nm; })){ hojoSetStatus('「'+nm+'」は既に登録済みです','#a76a00'); return; }
     HOJO.fields.push({ name:nm, funes:0 });
+    hojoDirtyMark_(nm);
     inp.value=''; inp.focus();
     hojoRender(); hojoPushSave();
   }
   function hojoBump(i, delta){
     var f=HOJO.fields[i]; if(!f) return;
     f.funes = Math.max(0, (Number(f.funes)||0) + delta);
+    hojoDirtyMark_(f.name);
     hojoRender(); hojoPushSave();
   }
   function hojoSetVal(i, val){
     var f=HOJO.fields[i]; if(!f) return;
     f.funes = Math.max(0, Math.round(Number(val)||0));
+    hojoDirtyMark_(f.name);
     hojoRenderTotals(); hojoPushSave();
   }
   function hojoDelField(i){
+    if(HOJO.fields[i]) hojoDirtyMark_(HOJO.fields[i].name);
     HOJO.fields.splice(i,1);
     hojoRender(); hojoPushSave();
   }
   function hojoTotal(){ var s=0; HOJO.fields.forEach(function(f){ s+=Number(f.funes)||0; }); return s; }
   function hojoRenderTotals(){
     var e=document.getElementById('hojo-total'); if(e) e.textContent = hojoTotal();
+    // 舟数モニター・歩留まりの「圃場」を保存を待たずにその場で反映
+    if(HOJO.date === todayStr_()) LAST_HOJO = Object.assign({}, LAST_HOJO || {}, { date: HOJO.date, total: hojoTotal() });
     fnRender();
   }
   function hojoRender(){
@@ -1959,22 +2039,40 @@
         + '</div>';
     }).join('');
     hojoRenderTotals();
-    var empty=document.getElementById('hojo-empty'); if(empty) empty.style.display = HOJO.fields.length ? 'none' : 'block';
+    var empty=document.getElementById('hojo-empty');
+    if(empty){
+      empty.style.display = HOJO.fields.length ? 'none' : 'block';
+      empty.textContent = (_hojoLoaded ? '今日の圃場はまだありません。' : '今日の圃場を読み込み中… ') + '「【広島】朝礼ボード_データ」に本日の圃場が登録されると、ここに🔗朝礼の付いた圃場が自動で並びます。無い分だけ上の欄で手動追加できます。';
+    }
   }
-  var _hojoDirty=false;
+  // 2026-10-02〜 変更した圃場だけを送る差分保存＋30秒ごとの読み直し＋日付またぎ対応（生産者タブと同じ考え方）
+  var _hojoDirty=false, _hojoDirtyKeys={}, _hojoInflight=0, _hojoLoaded=false;
+  function hojoDirtyMark_(name){ _hojoDirtyKeys[String(name||'').trim()]=true; }
+  function hojoHasPending_(){ return _hojoDirty || _hojoInflight>0 || Object.keys(_hojoDirtyKeys).length>0; }
   function hojoApplyLive_(data){
     if(!data || data.error || data.date!==HOJO.date) return false;
+    _hojoLoaded = true;
     HOJO.fields = data.fields || [];
-    hojoSaveLocal(); hojoRender();
+    hojoSaveLocal();
+    var a=document.activeElement, wrap=document.getElementById('hojo-list');
+    if(!(a && wrap && wrap.contains(a))) hojoRender(); else hojoRenderTotals();
     var t=new Date(); hojoSetStatus('🟢 保存済み '+('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2),'var(--green)');
     return true;
   }
-  function hojoLoadLive(){
+  function hojoLoadLive(silent){
     if(!GAS_URL || GAS_URL.indexOf('http')!==0){ hojoSetStatus('ローカル保存のみ（GAS_URL未設定）','var(--muted)'); hojoRender(); return; }
-    hojoSetStatus('読み込み中…','var(--muted)');
-    gasGet_('hojoGet', { date: HOJO.date }, function(data, err){
+    if(!silent) hojoSetStatus('読み込み中…','var(--muted)');
+    var reqDate = HOJO.date;
+    gasGet_('hojoGet', { date: reqDate }, function(data, err){
+      if(reqDate !== HOJO.date) return;
+      if(silent){ if(!err && !hojoHasPending_()) hojoApplyLive_(data); return; }
+      if(hojoHasPending_()) return;   // 読み込み中に入力された＝そちらの保存を優先
       if(err || !hojoApplyLive_(data)){
-        if(HOJO.fields && HOJO.fields.length){ hojoSetStatus('🟢 接続OK（ローカル入力分を保存中…）','var(--green)'); hojoRender(); hojoPushSave(); }
+        _hojoLoaded = true;
+        if(HOJO.fields && HOJO.fields.length){
+          HOJO.fields.forEach(function(f){ hojoDirtyMark_(f.name); });   // ローカルにしか無い入力を送る
+          hojoSetStatus('🟢 接続OK（ローカル入力分を保存中…）','var(--green)'); hojoRender(); hojoPushSave();
+        }
         else { hojoSetStatus(err ? '🟡 通信失敗（ローカル表示）' : '🟢 保存先に接続OK', err?'#a76a00':'var(--green)'); hojoRender(); }
       }
     });
@@ -1987,12 +2085,46 @@
     _hojoDirty=true;
     hojoSetStatus('保存中…','var(--muted)');
     hojoSaveTimer=setTimeout(function(){
-      gasPost_('hojoSave', { date:HOJO.date, fields:HOJO.fields }, function(d, err){
-        if(d && d.ok){ _hojoDirty=false; var t=new Date(); hojoSetStatus('🟢 保存済み '+('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2),'var(--green)'); }
-        else { hojoSetStatus('🟡 保存エラー（ローカルには保持）','#a76a00'); }
+      hojoSaveTimer=null;
+      var keys=Object.keys(_hojoDirtyKeys); _hojoDirtyKeys={}; _hojoDirty=false;
+      if(!keys.length) return;
+      var date=HOJO.date;
+      var fields=HOJO.fields.filter(function(f){ return keys.indexOf(String(f.name||'').trim())>=0; });
+      _hojoInflight++;
+      gasPost_('hojoSave', { date:date, keys:keys, fields:fields }, function(d, err){
+        _hojoInflight=Math.max(0,_hojoInflight-1);
+        if(d && d.ok){
+          var t=new Date(); hojoSetStatus('🟢 保存済み '+('0'+t.getHours()).slice(-2)+':'+('0'+t.getMinutes()).slice(-2),'var(--green)');
+          // 他PCの入力も含めたその日の全圃場が返ってくる（新GAS）。朝礼ボードの🔗印は手元の情報を引き継ぐ
+          if(d.fields && d.date===HOJO.date && !hojoHasPending_()){
+            var dx={}; HOJO.fields.forEach(function(f){ if(f.fromDx) dx[f.name]=true; });
+            var merged=d.fields.map(function(f){ return { name:f.name, funes:f.funes, fromDx:!!dx[f.name] }; });
+            var have={}; merged.forEach(function(f){ have[f.name]=true; });
+            Object.keys(dx).forEach(function(nm){ if(!have[nm]) merged.push({ name:nm, funes:0, fromDx:true }); });
+            hojoApplyLive_({ date:d.date, fields:merged });
+          }
+        }
+        else {
+          keys.forEach(function(k){ _hojoDirtyKeys[k]=true; });   // 次の保存でもう一度送る
+          hojoSetStatus('🟡 保存エラー（ローカルには保持）','#a76a00');
+        }
       });
     }, 700);
   }
+  function hojoRollDate_(){
+    if(!hojoInited) return false;
+    var td=todayStr_(); if(HOJO.date===td) return false;
+    HOJO.date=td; HOJO.fields=[]; _hojoDirtyKeys={}; _hojoDirty=false; _hojoLoaded=false;
+    var lbl=document.getElementById('hojo-date-label'); if(lbl) lbl.textContent=HOJO.date;
+    hojoLoadLocal(); hojoRender(); hojoLoadLive();
+    return true;
+  }
+  setInterval(function(){
+    if(!hojoInited) return;
+    if(hojoRollDate_()) return;
+    var v=document.getElementById('view-hojo');
+    if(v && v.classList.contains('show') && !hojoHasPending_()) hojoLoadLive(true);
+  }, 30000);
 
   /* ===== 舟数モニター（もう1台の液晶用。センター電子黒板の簡易版。2026-09-29に前日ストック〈発注書の前日ｽﾄｯｸ舟数・手入力で上書き可〉を追加） =====
      目標舟数＝本日荷造りの合計数量（数量変更で上書き可）／現在合計舟数＝前日ストック＋圃場（畑）＋生産者。

@@ -85,7 +85,7 @@ code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
   <h1>🧰 資材管理アプリ（広島）</h1>
   <div class="status">
     <div id="asof">—</div>
-    <div><span id="srcbadge" class="badge sample">サンプル</span>
+    <div><span id="srcbadge" class="badge sample">発注書 未取得</span>
       <span id="syncMini" class="badge" style="background:#eef1f5;color:#555;cursor:pointer;margin-left:4px" title="ほかのPCとの共有の状態（クリックで設定画面へ）" onclick="switchView('settings')">共有：オフ</span></div>
   </div>
 </header>
@@ -128,7 +128,6 @@ code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
   <div class="sec-title">使用（荷造数 × 原単位 → 理論使用量）</div>
   <div class="toolbar">
     <button class="btn" onclick="fetchLive()">🔗 発注書から取得（GAS）</button>
-    <button class="btn sec" onclick="loadSampleFunes()">🧪 サンプル荷造数を投入</button>
     <span class="muted" id="usageMeta"></span>
   </div>
   <div class="hint">SKU（取引先×区分×入数）は発注書メインシートから自動取得できます。<b>ﾜﾝﾍﾞｼﾞ・サンプル・合計</b>列は除外。
@@ -271,13 +270,12 @@ code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
 <!-- ============ SWITCH (後継・使い切り) ============ -->
 <section id="view-switch" class="view">
   <div class="sec-title">🔁 資材の切替（後継・使い切り）
-    <button class="btn small" onclick="openSwitchSetup()">＋ 真空袋の切替チェーンを用意</button>
   </div>
   <div class="hint">
-  <b>ある資材を使い切ったら／決めた日になったら／決めた枚数を使ったら、次の資材へ切り替えたい</b>ときに使います（例：真空袋の銘柄切替）。<br>
+  <b>ある資材を使い切ったら／決めた日になったら／決めた枚数を使ったら、次の資材へ切り替えたい</b>ときに使います（例：袋・シールの銘柄切替）。<br>
   ・<b>発注しない（使い切り）</b>にチェックすると、その資材は「発注推奨」を出しません。在庫が尽きかけると代わりに<b>切替のお知らせ</b>を出します。<br>
   ・<b>切替日</b>＝この日以降になったら切替をお知らせ。<b>○枚使ったら</b>＝この列の数を入れた時点の在庫から、その枚数を使ったら切替をお知らせ。<br>
-  ・<b>次に使う資材</b>を選び、条件がそろったら「▶ 今すぐ切替」を押すと、BOM（真空区分などの袋の割り当て）が次の資材に付け替わります。<br>
+  ・<b>次に使う資材</b>を選び、条件がそろったら「▶ 今すぐ切替」を押すと、BOM（袋・シール等の割り当て）が次の資材に付け替わります。<br>
   ・在庫がまだ<b>未入力</b>の資材は、右の「🔢在庫」ボタンで実数を入れられます。
   </div>
   <div class="hint" id="switchChainHint" style="font-weight:600"></div>
@@ -320,7 +318,7 @@ code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
   <div class="hint" id="syncStatus" style="font-weight:600">共有：オフ</div>
   <div class="row">
     <div class="field"><label>集計の起点日</label><input type="date" id="startDate"></div>
-    <div class="field"><label>基準日（本日）</label><input type="date" id="baseDate"></div>
+    <div class="field"><label>基準日（本日・自動）</label><input type="date" id="baseDate" disabled title="開くたびに今日の日付になります"></div>
     <div class="field"><label>安全在庫日数（常に持ちたい日数）</label><input type="number" id="safetyDays" min="0"></div>
     <div class="field"><label>破棄率の異常アラート閾値(%)</label><input type="number" id="scrapAlertPct" min="0"></div>
   </div>
@@ -332,12 +330,7 @@ code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
   </div>
   <div class="hint" id="settingsHint"></div>
   <div class="sec-title" style="margin-top:20px">電子黒板との連携</div>
-  <div class="hint">このアプリのアラート件数は自動で保存され、同じPC/ブラウザで開いた<b>電子黒板の「資材」カード</b>に件数が表示されます。カードをクリックするとこのアプリが開きます。</div>
-  <div class="sec-title" style="margin-top:16px">GAS 側で用意する連携（次のステップ）</div>
-  <div class="hint">
-  既存 <code>広島連携.gs</code> に <code>?type=shizaiUsage</code> を1つ足すだけ。期間内の各SKU荷造数合計をJSONで返します：<br>
-  <code>{ asOf, start, rows:[ {tori,kubun,irisu,funes}, ... ] }</code>。JSONP（<code>?callback=</code>）にも対応。SS_IDを入れ再デプロイ→上のURL設定で🟢実データ。
-  </div>
+  <div class="hint">このアプリの「要対応」一覧（画面上部の赤い帯と同じ内容）は、共有ONのPCで開いた時にGAS経由で<b>電子黒板ホームの「🧰資材の要確認」</b>へ送られます。荷造数は開いた時に発注書から自動で取得します（「🔗 発注書から取得」で手動でも取り直せます）。</div>
 </section>
 </main>
 
@@ -538,6 +531,7 @@ function load(){ try{S=JSON.parse(localStorage.getItem(LS));}catch(e){} if(!S)S=
   migHiroshimaSku();
   migHiro0929();
   migHiro1001();
+  S.settings.baseDate=todayStr();   // 2026-10-02〜 基準日は常に「今日」（以前は保存値のまま9/28で止まり、あと◯日・切れ予定がずれていた）
 }
 function renderGasUrlNote(){
   const el=document.getElementById('gasUrlNote'); if(!el)return;
@@ -615,7 +609,7 @@ function migHiro1001(){
   try{ localStorage.setItem(LS,JSON.stringify(S)); }catch(e){}
   return true;
 }
-function save(){ localStorage.setItem(LS,JSON.stringify(S)); publishAlerts(); cloudMarkDirty(); }
+function save(){ try{ localStorage.setItem(LS,JSON.stringify(S)); }catch(e){ console.warn('localStorage保存失敗',e); } publishAlerts(); cloudMarkDirty(); }
 
 /* =================== CALC =================== */
 function matById(id){return S.materials.find(m=>m.id===id);}
@@ -751,7 +745,7 @@ function computeStock(){
     const coverOn=!!m.coverOn, coverDays=Number(m.coverDays||45);
     let coverWarn=false, coverHave=null, coverNeed=0, coverDaily=0, coverSrc='';
     if(coverOn&&!off){
-      // ①優先＝これから coverDays 日ぶんの“予定”（シフトの出勤人数／発注書の今後予定）を積む
+      // ①優先＝これから coverDays 日ぶんの“予定”（発注書の今後予定）を積む
       let futNeed=0;
       if(fd){ const hz=addDaysStr(base,coverDays);
         Object.keys(fd).forEach(d=>{ if(d>base&&d<=hz) futNeed+=fd[d]*(1+Number(m.scrapRate||0)/100); }); }
@@ -955,7 +949,7 @@ function renderDash(){
     // ③ 別基準「○日分の在庫が確保できているか」＝設定は「資材マスタ」画面。ここは結果だけ表示（ボタンは置かない＝画面をシンプルに）。
     if(!r.off && r.coverOn){
       const haveTxt=(r.coverHave!=null&&isFinite(r.coverHave))?fmt(r.coverHave)+'日分':(r.coverDaily>0?'—':'使用量不明');
-      action+=' <span class="'+(r.coverWarn?'state-warn':'state-ok')+'" style="font-size:11px" title="'+(r.coverSrc==='plan'?'これから'+fmt(r.coverDays)+'日ぶんの予定（シフト・発注書）から判定':'起点日〜基準日の日次平均から判定')+'（基準の追加・変更は「資材マスタ」画面）">'+(r.coverWarn?'⚠️':'✅')+'基準'+fmt(r.coverDays)+'日分：いま '+haveTxt+'</span>';
+      action+=' <span class="'+(r.coverWarn?'state-warn':'state-ok')+'" style="font-size:11px" title="'+(r.coverSrc==='plan'?'これから'+fmt(r.coverDays)+'日ぶんの予定（発注書）から判定':'起点日〜基準日の日次平均から判定')+'（基準の追加・変更は「資材マスタ」画面）">'+(r.coverWarn?'⚠️':'✅')+'基準'+fmt(r.coverDays)+'日分：いま '+haveTxt+'</span>';
     }
     if(!r.off && r.hasSeason){
       action+=' <button class="btn '+(r.suggest==='off'?'warn':'sec')+' small" onclick="toggleSeason(\''+r.m.id+'\')">'+(r.suggest==='off'?'⏸ 季節外にする（そろそろ）':'季節外にする')+'</button>';
@@ -1001,7 +995,7 @@ function renderUsage(){
       <td>${sk.exc?'—':fmt(boxes)}</td>
       <td class="l muted">${mats||'<span style="color:var(--danger)">BOM未設定</span>'}</td></tr>`;
   }).join('');
-  document.getElementById('usageMeta').textContent=(S.live.isLive?'🟢 発注書ライブ':'🧪 手入力/サンプル')+'　SKU '+S.skus.length+'件';
+  document.getElementById('usageMeta').textContent=(S.live.isLive?'🟢 発注書ライブ':'⚪ 発注書 未取得')+'　SKU '+S.skus.length+'件';
 }
 
 function renderOrders(){
@@ -1047,7 +1041,7 @@ function renderStock(){
       <td><input class="cell" type="number" id="st_a_${i}" value="${actual}" oninput="stCalc(${i})"></td>
       <td id="st_loss_${i}" class="muted">—</td><td id="st_rate_${i}" class="muted">—</td>
       <td class="l"><span id="st_judge_${i}"></span>
-        <input id="st_r_${i}" placeholder="理由（破棄が多い時）" value="${reason}" style="width:170px;margin-left:6px"></td></tr>`;
+        <input id="st_r_${i}" placeholder="理由（破棄が多い時）" value="${esc(reason)}" style="width:170px;margin-left:6px"></td></tr>`;
   }).join('');
   stRows.forEach((r,i)=>stCalc(i));
   document.getElementById('st_meta').textContent=date?('棚卸確認日 '+date+'（'+month+' として記録）'):'棚卸を確認した日を選んでください';
@@ -1073,6 +1067,13 @@ function commitStocktake(){
   const newStart=addDaysStr(date,1);   // 起点日＝棚卸日の翌日
   if(!confirm(date+' の棚卸を確定します。（担当：'+by+'）\n・破棄率を更新\n・実在庫を新しい基準在庫にリセット\n・集計起点日を '+newStart+' へ\nよろしいですか？'))return;
   const pct=Number(S.settings.scrapAlertPct||0);let updated=0;
+  // 2026-10-02〜 実数を入れなかった資材は「今の計算上の在庫」をそのまま新しい基準在庫に引き継ぐ
+  //   （起点日が翌日へ進み荷造数もクリアされるため、そのままだと古い基準在庫＝前回棚卸の数に戻ってしまっていた）
+  const entered={}; stRows.forEach((r,i)=>{ const el=document.getElementById('st_a_'+i); if(el&&el.value!=='') entered[r.mid]=true; });
+  computeStock().forEach(r=>{
+    if(entered[r.m.id]) return;
+    r.m.initStock=Math.round(r.stock*10)/10; r.m.stockAdj=0; r.m.stockAdjDate='';
+  });
   stRows.forEach((r,i)=>{
     const av=document.getElementById('st_a_'+i).value;if(av==='')return;
     const actual=Number(av);const loss=r.theoStock-actual;const rate=r.theo>0?Math.max(0,loss/r.theo*100):0;
@@ -1134,7 +1135,7 @@ function nowStr(){const d=new Date();const p=n=>String(n).padStart(2,'0');
 function backupSnapshot(){
   const c=JSON.parse(JSON.stringify(S));
   delete c.backups; delete c.cloud;
-  if(c.settings){ delete c.settings.gasUrl; delete c.settings.shareOn; delete c.settings.deviceName; }
+  if(c.settings){ delete c.settings.gasUrl; delete c.settings.shareOn; delete c.settings.deviceName; delete c.settings.baseDate; }   // 基準日はPCごとに常に今日
   return JSON.stringify(c);
 }
 // 月末バックアップを作成（このPCの履歴に追加＋スプレッドシートへ追記）
@@ -1193,6 +1194,7 @@ function applySnapshot(obj){
   S=obj; S.settings=S.settings||{};
   S.settings=Object.assign({safetyDays:30,scrapAlertPct:10},S.settings);
   S.settings.gasUrl=g; S.settings.shareOn=on; S.settings.deviceName=dev;
+  S.settings.baseDate=todayStr();
   S.backups=keepBackups; S.cloud=keepCloud;
   S.funes=S.funes||{};S.futureFunes=S.futureFunes||{};S.orders=S.orders||[];S.stocktakes=S.stocktakes||[];S.boms=S.boms||{};
   save(); initUI();
@@ -1234,10 +1236,10 @@ function renderMat(){
   const tb=document.querySelector('#matTable tbody');
   tb.innerHTML=S.materials.map((m,i)=>`<tr ondragover="matDragOver(event,${i})" ondrop="matDrop(event,${i})">
     <td class="l" draggable="true" ondragstart="matDragStart(event,${i})" ondragend="matDragEnd(event)" style="cursor:grab;color:var(--muted);user-select:none;font-size:16px" title="ドラッグで並べ替え">⠿</td>
-    <td class="l"><input class="cell" style="width:90px" value="${m.cat||''}" onchange="setMat('${m.id}','cat',this.value)"></td>
-    <td class="l"><input style="width:150px" value="${m.name||''}" onchange="setMat('${m.id}','name',this.value)"></td>
-    <td class="l"><input class="cell" style="width:46px" value="${m.unit||''}" onchange="setMat('${m.id}','unit',this.value)"></td>
-    <td class="l"><input style="width:110px" value="${m.supplier||''}" onchange="setMat('${m.id}','supplier',this.value)"></td>
+    <td class="l"><input class="cell" style="width:90px" value="${esc(m.cat)}" onchange="setMat('${m.id}','cat',this.value)"></td>
+    <td class="l"><input style="width:150px" value="${esc(m.name)}" onchange="setMat('${m.id}','name',this.value)"></td>
+    <td class="l"><input class="cell" style="width:46px" value="${esc(m.unit)}" onchange="setMat('${m.id}','unit',this.value)"></td>
+    <td class="l"><input style="width:110px" value="${esc(m.supplier)}" onchange="setMat('${m.id}','supplier',this.value)"></td>
     <td><input class="cell" style="width:52px" type="number" value="${m.leadDays||0}" onchange="setMat('${m.id}','leadDays',this.value)"></td>
     <td><input class="cell" type="number" value="${m.initStock||0}" onchange="setMat('${m.id}','initStock',this.value)"></td>
     <td><input class="cell" style="width:56px" type="number" value="${m.scrapRate||0}" onchange="setMat('${m.id}','scrapRate',this.value)"></td>
@@ -1464,7 +1466,8 @@ document.getElementById('o_save').addEventListener('click',(e)=>{
   save();recalcAll();renderOrders();cloudPushNow();          // ⑤ 発注はその場で発注履歴へ＋全PCへ送信
 });
 let _delivId=null;
-function openDeliver(id){_delivId=id;const o=S.orders.find(x=>x.id===id);const m=matById(o.materialId);
+function openDeliver(id){_delivId=id;const o=S.orders.find(x=>x.id===id);const m=o&&matById(o.materialId);
+  if(!o||!m){alert('この発注は他のPCで削除・変更されたようです。画面を更新します。');recalcAll();renderOrders();return;}
   document.getElementById('d_info').textContent=m.name+'　発注 '+fmt(o.qty)+(m.unit||'')+'（'+o.orderDate+'発注／予定 '+o.dueDate+'）';
   document.getElementById('d_date').value=S.settings.baseDate;document.getElementById('d_qty').value=o.qty;
   document.getElementById('delivDlg').showModal();}
@@ -1553,26 +1556,22 @@ function busyRecheck(){
   const who=(prompt('全ての資材の在庫を再確認したら、担当者名を入れて「OK」を押してください。\n（Slackへ報告が流れます）',S.settings.lastStockBy||'')||'').trim();
   if(!who){if(who!=='')alert('担当者名を入れてください。');return;}
   const msg=who+':繁忙期に備え、全ての資材を再確認しました';
+  // 2026-10-02〜 再確認の記録を先に残し、Slack報告は失敗しても止めない（以前はGASに送信先が無く必ず失敗していた）
+  S.busy=S.busy||{};S.busy[key]={by:who,at:new Date().toISOString()};
+  S.settings.lastStockBy=who;
+  save();busyPushBoard(key,who);recalcAll();
   shizaiSendSlack(msg,(ok,err)=>{
-    if(!ok){alert('🟡 Slackへの送信に失敗しました'+(err?'（'+err+'）':'')+'\nGASのURL・デプロイをご確認ください。');return;}
-    S.busy=S.busy||{};S.busy[key]={by:who,at:new Date().toISOString()};
-    S.settings.lastStockBy=who;
-    save();busyPushBoard(key,who);recalcAll();
-    alert('✓ Slackへ報告しました。\n\n'+msg);
+    if(ok) alert('✓ 記録しました。Slackへも報告しました。\n\n'+msg);
+    else alert('✓ 再確認を記録しました。\n（Slackへの報告はできませんでした'+(err?'：'+err:'')+'）');
   });
 }
-// Slack投稿はGAS経由（Webhook URLはGASのスクリプトプロパティ HELP_WEBHOOK が持つ）
+// Slack投稿はGAS経由（広島チャンネル。GASの action=slackPost が SLACK_BOT_TOKEN / SLACK_CHANNEL_ID で投稿する）
 function shizaiSendSlack(msg,cb){
   const url=(S.settings.gasUrl||'').trim();
-  if(!url){cb(false,'設定画面で GAS の URL を入れてください');return;}
-  const name='shizaiSlk_'+Date.now();let done=false;
-  const sc=document.createElement('script');
-  const fin=(ok,err)=>{if(done)return;done=true;clearTimeout(t);try{delete window[name];}catch(e){}sc.remove();cb(ok,err);};
-  const t=setTimeout(()=>fin(false,'通信がタイムアウトしました'),20000);
-  window[name]=(res)=>fin(!!(res&&res.ok),(res&&res.error)||'');
-  sc.src=url+(url.includes('?')?'&':'?')+'type=sendSlack&callback='+name+'&msg='+encodeURIComponent(msg);
-  sc.onerror=()=>fin(false,'');
-  document.body.appendChild(sc);
+  if(!url){ cb(false,'GASのURLが未設定'); return; }
+  fetch(url,{method:'POST',body:JSON.stringify({action:'slackPost',msg:msg})})
+    .then(r=>r.json()).then(res=>cb(!!(res&&res.ok),(res&&res.error)||''))
+    .catch(e=>cb(false,String(e)));
 }
 // 電子黒板にも「実施済み」を伝える（本日荷造り状態の day.busy に相乗り＝全PCの液晶から表示が消える）
 function busyPushBoard(key,who){
@@ -1585,21 +1584,22 @@ function busyPushBoard(key,who){
 }
 
 /* =================== LIVE (GAS) =================== */
-function fetchLive(){
+// silent=true：開いた時の自動取得（失敗してもアラートを出さない）
+function fetchLive(silent){
   const url=(S.settings.gasUrl||'').trim();
-  if(!url){alert('設定画面で GAS の URL を入れてください。\n未設定のうちは「サンプル荷造数」で試せます。');switchView('settings');return;}
+  if(!url){ if(!silent){alert('設定画面で GAS の URL を入れてください。');switchView('settings');} return; }
   const cb='shizaiCb_'+Date.now();
-  window[cb]=(data)=>{try{applyLive(data);}finally{delete window[cb];sc.remove();}};
+  window[cb]=(data)=>{try{applyLive(data,silent);}finally{delete window[cb];sc.remove();}};
   const sc=document.createElement('script');const sep=url.includes('?')?'&':'?';
   sc.src=url+sep+'type=shizaiUsage&start='+encodeURIComponent(S.settings.startDate)+'&end='+encodeURIComponent(S.settings.baseDate)+'&callback='+cb;
-  sc.onerror=()=>{alert('取得に失敗しました。URL・デプロイ・共有設定をご確認ください。');sc.remove();delete window[cb];};
+  sc.onerror=()=>{ if(!silent) alert('取得に失敗しました。URL・デプロイ・共有設定をご確認ください。');sc.remove();delete window[cb];};
   document.body.appendChild(sc);
 }
 // 発注書から降ってきたSKUのうち、資材の集計対象外にするもの（グレー表示）
 //   広島の発注書は全列がc/s（箱数）入力＝熊本のようなkg入力のSKUは無いので kg フラグは常にfalse
 function liveExc(r){ return /ﾜﾝﾍﾞｼﾞ|ワンベジ|サンプル|ｻﾝﾌﾟﾙ|合計|下茹で/.test(String(r.kubun||'')+String(r.tori||'')); }
-function applyLive(data){
-  if(!data||!data.rows){alert('データ形式が想定と違います。\nGASを新しいバージョンで再デプロイしたかご確認ください。');return;}
+function applyLive(data,silent){
+  if(!data||!data.rows){ if(silent) return; alert('データ形式が想定と違います。\nGASを新しいバージョンで再デプロイしたかご確認ください。');return;}
   data.rows.forEach(r=>{
     if(!r.kubun||String(r.kubun).trim()==='')return;              // 区分空欄は取り込まない
     const key=skuKey(r.tori,r.kubun,r.irisu);
@@ -1620,18 +1620,6 @@ function applyLive(data){
   document.getElementById('srcbadge').className='badge live';document.getElementById('srcbadge').textContent='🟢 発注書ライブ';
   document.getElementById('asof').textContent='取得 '+S.live.asOf+' ／ 期間 '+(data.start||S.settings.startDate)+'〜'+S.settings.baseDate;
   save();renderUsage();recalcAll();
-}
-function loadSampleFunes(){
-  S.futureFunes={};
-  S.skus.forEach(sk=>{if(sk.exc){S.funes[sk.key]=0;return;}
-    const base=sk.irisu<=2?280:sk.irisu<=5?150:70;S.funes[sk.key]=base+(sk.key.length*7)%120;
-    // デモ用の今後7日分の予定（基準日の翌日から）
-    const per=Math.round((base+(sk.key.length*5)%80)/7);
-    const days=[]; for(let k=1;k<=7;k++){ days.push([addDaysStr(S.settings.baseDate||todayStr(),k), per]); }
-    S.futureFunes[sk.key]=days;
-  });
-  save();renderUsage();recalcAll();
-  document.getElementById('asof').textContent='サンプル荷造数＋今後予定を投入（デモ）';
 }
 
 /* =================== CLOUD SYNC（ほかのPCと共有） =================== */
@@ -1664,7 +1652,7 @@ function cloudCheckNow(){ if(!shareEnabled())return;
 }
 // クラウドに保存するデータ（PCごとの設定は除く。cloudメタも除く）
 function stateForCloud(){ const c=JSON.parse(JSON.stringify(S)); delete c.cloud; delete c.backups; // 月末バックアップは専用シートに別保存（日次同期は軽く保つ）
-  if(c.settings){ delete c.settings.gasUrl; delete c.settings.shareOn; delete c.settings.deviceName; }
+  if(c.settings){ delete c.settings.gasUrl; delete c.settings.shareOn; delete c.settings.deviceName; delete c.settings.baseDate; }   // 基準日はPCごとに常に今日
   return JSON.stringify(c); }
 // JSONP読み取り（file://でも動く）
 function cloudJsonp(type,onData,onErr,extra){
@@ -1680,8 +1668,10 @@ function cloudJsonp(type,onData,onErr,extra){
   setTimeout(()=>{ if(!done && window[cb]){ delete window[cb]; sc.remove(); onErr&&onErr('timeout'); } },25000);
 }
 // クラウドの最新データを取り込む
-function cloudPullFull(onDone){
+function cloudPullFull(onDone,force){
   cloudJsonp('shizaiLoad',(res)=>{
+    // 読み込みを待つ間にこの画面で編集していたら、上書きせずに競合として選んでもらう（編集が黙って消えないように）
+    if(cloudDirty && !force && res && !res.error && res.json){ showConflict({savedBy:res.savedBy,savedAt:res.savedAt,rev:res.rev}); onDone&&onDone(false); return; }
     if(!res || res.error){ setSyncStatus('同期エラー：'+((res&&res.error)||'取得失敗'),'#d9534f'); onDone&&onDone(false); return; }
     if(!res.json){ cloudPush(true,()=>onDone&&onDone(true)); return; }  // クラウドが空＝初回アップロード
     try{ applyCloudState(JSON.parse(res.json),res); onDone&&onDone(true); }
@@ -1694,12 +1684,14 @@ function applyCloudState(cloudS,meta){
   S=cloudS; S.settings=S.settings||{};
   S.settings=Object.assign({safetyDays:30,scrapAlertPct:10},S.settings);
   S.settings.gasUrl=g; S.settings.shareOn=on; S.settings.deviceName=dev;
+  S.settings.baseDate=todayStr();
   S.backups=keepBackups;
   S.funes=S.funes||{};S.futureFunes=S.futureFunes||{};S.orders=S.orders||[];S.stocktakes=S.stocktakes||[];S.boms=S.boms||{};
   S.cloud={rev:Number(meta.rev)||0,savedAt:meta.savedAt||'',savedBy:meta.savedBy||''};
   migHiroshimaSku();   // クラウド側が熊本の雛形のままでも、読み込んだ時点で広島のSKUに直す
   const mig0929=migHiro0929();   // 資材名変更・土付き箱の使用OFF（クラウドが未移行なら、直した内容をクラウドへ送り返す）
   const mig1001=migHiro1001();   // ミラマットの使用OFF（同上）
+  clearTimeout(cloudPushTimer);
   cloudDirty=false; boardCloudFresh=true; localStorage.setItem(LS,JSON.stringify(S)); initUI();
   if(mig0929||mig1001) cloudMarkDirty();
   setSyncStatus('🟢 同期中（rev'+S.cloud.rev+' '+(S.cloud.savedAt||'')+(S.cloud.savedBy?(' by '+S.cloud.savedBy):'')+'）','#137333');
@@ -1739,7 +1731,7 @@ function showConflict(res){
   document.getElementById('cloudBannerMsg').innerHTML='⚠️ '+who+'が先にデータを更新しました（'+(res.savedAt||'')+'）。<br>この画面での変更をどうしますか？';
   const btns=document.getElementById('cloudBannerBtns'); btns.innerHTML='';
   const b1=document.createElement('button'); b1.className='btn'; b1.textContent='最新を読み込む（自分の変更は破棄）';
-  b1.onclick=()=>{ hideBanner(); cloudPullFull(()=>{}); };
+  b1.onclick=()=>{ hideBanner(); cloudPullFull(()=>{},true); };
   const b2=document.createElement('button'); b2.className='btn danger'; b2.textContent='自分の変更で上書きする';
   b2.onclick=()=>{ hideBanner(); cloudJsonp('shizaiMeta',(m)=>{ S.cloud.rev=Number(m.rev)||S.cloud.rev; cloudPush(true); },()=>cloudPush(true)); };
   btns.appendChild(b1); btns.appendChild(b2);
@@ -1777,15 +1769,30 @@ function cloudSyncNow(){
   else cloudPullFull(()=>setSyncStatus('🔄 最新を取り込みました','#137333'));
 }
 function initCloud(){
-  if(shareEnabled()){ setSyncStatus('接続中…','#555'); cloudPullFull(()=>{}); startCloudPoll(); }
-  else setSyncStatus(S.settings.shareOn?'共有：オン（GAS URL未設定）':'共有：オフ', S.settings.shareOn?'#d9534f':'');
+  if(shareEnabled()){ setSyncStatus('接続中…','#555'); cloudPullFull(()=>autoFetchLive()); startCloudPoll(); }
+  else { setSyncStatus(S.settings.shareOn?'共有：オン（GAS URL未設定）':'共有：オフ', S.settings.shareOn?'#d9534f':''); autoFetchLive(); }
 }
+// 2026-10-02〜 開いた時に、今日まだ発注書から取っていなければ自動で取得（荷造数・今後の予定を最新に）。
+//   以前は「🔗 発注書から取得」を押した時だけ更新され、9/28の値のまま切れ予定を計算していた。
+function autoFetchLive(){
+  if(!(S.settings.gasUrl||'').trim()) return;
+  if(S.live && S.live.isLive && S.live.asOf===todayStr()) return;
+  fetchLive(true);
+}
+// 開きっぱなしで日付が変わったら、基準日を今日に進めて計算し直す
+setInterval(()=>{
+  if(S && S.settings && S.settings.baseDate!==todayStr()){
+    S.settings.baseDate=todayStr();
+    try{ document.getElementById('baseDate').value=S.settings.baseDate; }catch(e){}
+    recalcAll(); autoFetchLive();
+  }
+},60000);
 
 /* =================== SETTINGS/IO =================== */
 function saveSettings(){
   S.settings.gasUrl=document.getElementById('gasUrl').value.trim();
-  S.settings.startDate=document.getElementById('startDate').value||'2026-05-01';
-  S.settings.baseDate=document.getElementById('baseDate').value||todayStr();
+  S.settings.startDate=document.getElementById('startDate').value||'2026-09-05';
+  S.settings.baseDate=todayStr();
   S.settings.safetyDays=Number(document.getElementById('safetyDays').value||0);
   S.settings.scrapAlertPct=Number(document.getElementById('scrapAlertPct').value||0);
   save();document.getElementById('settingsHint').textContent='保存しました。';renderGasUrlNote();recalcAll();
@@ -1793,7 +1800,14 @@ function saveSettings(){
 function exportJson(){const blob=new Blob([JSON.stringify(S,null,2)],{type:'application/json'});
   const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='資材管理データ_'+todayStr()+'.json';a.click();}
 function importJson(ev){const f=ev.target.files[0];if(!f)return;const r=new FileReader();
-  r.onload=()=>{try{S=JSON.parse(r.result);save();initUI();alert('読み込みました');}catch(e){alert('読み込み失敗');}};r.readAsText(f);}
+  r.onload=()=>{try{
+    const obj=JSON.parse(r.result); if(!obj||!Array.isArray(obj.materials)) throw new Error('形式違い');
+    // このPCの接続設定（GAS URL・共有・端末名）とクラウドの版数は読み込んだファイルで上書きしない
+    const g=S.settings.gasUrl, on=S.settings.shareOn, dev=S.settings.deviceName, cloud=S.cloud;
+    try{ localStorage.setItem(LS,JSON.stringify(obj)); }catch(e){}
+    load(); S.settings.gasUrl=g; S.settings.shareOn=on; S.settings.deviceName=dev; S.cloud=cloud;
+    S.live=S.live||{asOf:null,isLive:false};
+    save();initUI();alert('読み込みました');}catch(e){alert('読み込み失敗');}};r.readAsText(f);}
 function resetAll(){if(!confirm('全データを初期状態に戻します。よろしいですか？'))return;S=defaultState();save();initUI();}
 
 /* =================== NAV =================== */
@@ -1811,7 +1825,7 @@ function initUI(){
   renderGasUrlNote();
   document.getElementById('shareOn').checked=!!S.settings.shareOn;
   document.getElementById('deviceName').value=S.settings.deviceName||'';
-  document.getElementById('startDate').value=S.settings.startDate||'2026-05-01';
+  document.getElementById('startDate').value=S.settings.startDate||'2026-09-05';
   document.getElementById('baseDate').value=S.settings.baseDate||todayStr();
   document.getElementById('safetyDays').value=S.settings.safetyDays;
   document.getElementById('scrapAlertPct').value=S.settings.scrapAlertPct;
