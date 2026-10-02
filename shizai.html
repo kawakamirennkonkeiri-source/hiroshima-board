@@ -164,7 +164,7 @@ code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
   棚卸をした日を選び、<b>実際の在庫数</b>を入力して「<b>この日の棚卸を確定</b>」すると：<br>
   ① 差（理論在庫−実在庫＝ロス）から <b>破棄率＝ロス÷理論使用量</b> を自動計算し、資材マスタの破棄率を更新（回数を重ねるほど精度UP）。<br>
   ② 実在庫を新しい基準在庫にリセット（＝ドリフトをゼロ点合わせ）／起点日を<b>棚卸日の翌日</b>へ／バックアップを保存。<br>
-  ③ 破棄率が <b id="stAlertPct">10</b>%（設定で変更可）を超えたら「⚠️破棄が多すぎ」を表示。<b>理由を書くとアラートが消えます</b>。<br>
+  ③ 破棄率が <b id="stAlertPct">10</b>%（設定で変更可）を超えたら「⚠️破棄が多すぎ」を表示。<b>ダッシュボードの「🗑 破棄率高い」をクリック→商品名・個数・破棄率・理由を記入するとアラートが消え、下の「破棄理由の履歴」に残ります</b>。<br>
   <b>🔁 棚卸再確認</b>＝月の途中で数え直したいとき用。<b>実在庫を入力して押すと、現在庫だけを今の実数に合わせます</b>（破棄率の学習・起点日の更新・バックアップは行いません）。<br>
   どちらのボタンも、先に<b>担当者名</b>を入れてから押してください（誰が棚卸したか記録されます）。
   </div>
@@ -182,6 +182,13 @@ code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
         <th title="棚卸再確認で入れた実数への補正（±）">再棚卸<br>(補正)</th><th title="基準在庫＋入庫−理論使用±再棚卸">理論在庫</th>
         <th>実在庫(入力)</th><th>ロス</th><th>破棄率</th><th class="l">判定 / 理由</th>
       </tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+  <div class="sec-title" style="margin-top:18px">🗑 破棄理由の履歴 <span class="muted" style="font-weight:400;font-size:12px">ダッシュボードの「破棄率高い」をクリックして記入した内容（全PC共有）</span></div>
+  <div class="tablewrap">
+    <table id="scrapLogTable">
+      <thead><tr><th>記入日時</th><th class="l">商品名</th><th>個数</th><th>破棄率</th><th class="l">理由</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -392,6 +399,22 @@ code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
   </div>
 </form></dialog>
 
+<!-- ④ SCRAP REASON DIALOG（破棄率が高いアラートの理由記入 → 履歴に残す） -->
+<dialog id="scrapDlg"><form method="dialog">
+  <div class="dlg-h">🗑 破棄が多い理由を記入</div>
+  <div class="dlg-b">
+    <div id="sc_info" class="muted"></div>
+    <div class="row" style="margin:0">
+      <div class="field"><label>商品名</label><input id="sc_name" style="width:220px"></div>
+      <div class="field"><label>個数（破棄した数）</label><input type="number" id="sc_qty" min="0" style="width:110px"></div>
+      <div class="field"><label>破棄率(%)</label><input type="number" id="sc_rate" step="0.1" style="width:90px"></div>
+    </div>
+    <div class="field" style="margin-top:6px"><label>理由 <span style="color:var(--danger)">※必須</span></label><input id="sc_reason" style="width:100%" placeholder="例：箱がつぶれて使えなかった／数え間違い など"></div>
+    <small class="help">記入すると<b>このアラートは消え</b>、「月末棚卸」タブの<b>破棄理由の履歴</b>に残ります（全PC共有）。</small>
+  </div>
+  <div class="dlg-f"><button class="btn sec" value="cancel">キャンセル</button><button class="btn" id="sc_save" value="ok">記入してアラートを消す</button></div>
+</form></dialog>
+
 <!-- DELIVER DIALOG -->
 <dialog id="delivDlg"><form method="dialog">
   <div class="dlg-h">納品を入力</div>
@@ -462,6 +485,7 @@ const SEED_SKUS = [
 ];
 /* =================== STATE =================== */
 const LS='shizai_app_v2';
+const APP_VER=20261002.2;   // 画面の版。クラウドに新しい版で保存されていたら、古い画面は自動で読み直す（古い画面が古い計算で上書きしないように）
 let S=null;
 function skuKey(t,k,i){return t+'|'+k+'|'+i;}
 function bunruiTag(k){
@@ -522,7 +546,7 @@ function todayStr(){const d=new Date();const p=n=>String(n).padStart(2,'0');
 // 既定のGAS URL（デプロイ済み）。設定画面から変更できる。
 const GAS_URL_DEFAULT='https://script.google.com/macros/s/AKfycbzvyoaRFRlG5LJ30FEoCjwUvhObb6p6jIULlgwWg6sdfTCBF54JbCR5n61Bve7Uktog/exec';
 function load(){ try{S=JSON.parse(localStorage.getItem(LS));}catch(e){} if(!S)S=defaultState();
-  S.funes=S.funes||{};S.futureFunes=S.futureFunes||{};S.orders=S.orders||[];S.stocktakes=S.stocktakes||[];S.boms=S.boms||{};S.backups=S.backups||[];S.recounts=S.recounts||[];
+  S.funes=S.funes||{};S.futureFunes=S.futureFunes||{};S.orders=S.orders||[];S.stocktakes=S.stocktakes||[];S.boms=S.boms||{};S.backups=S.backups||[];S.recounts=S.recounts||[];S.scrapLog=S.scrapLog||[];
   S.settings=Object.assign({safetyDays:30,scrapAlertPct:10,shareOn:false,deviceName:''},S.settings);
   S.cloud=Object.assign({rev:0,savedAt:'',savedBy:''},S.cloud);
   S.busy=S.busy||{};                                   // ② 繁忙期の「全資材 再確認」記録（YYYY-MM → {by,at}）
@@ -763,10 +787,20 @@ function computeStock(){
       }
       if(coverWarn&&!m.noReorder)warn=true;
     }
+    // ① 必要在庫（表示用）：今日〜(LT＋安全在庫日数)のあいだに要る量。発注書の今後予定があればそれを積む／無ければ過去平均／残数方式はしきい値
+    let needStock=null, needSrc='';
+    if(mode==='threshold'){ needStock=Number(m.thresholdQty||0); needSrc='しきい値'; }
+    else if(mode==='auto'||coverOn){
+      let planNeed=0;
+      if(fd){ const hz=addDaysStr(base,thresholdDays); Object.keys(fd).forEach(d=>{ if(d>base&&d<=hz) planNeed+=fd[d]*(1+Number(m.scrapRate||0)/100); }); }
+      if(planNeed>0){ needStock=planNeed; needSrc='予定'; }
+      else if(daily>0){ needStock=reorder; needSrc='過去平均'; }
+      else needSrc=(Object.keys(S.boms).some(k=>Number((S.boms[k]||{})[m.id]||0)>0)?'使用実績なし':'BOM未設定');
+    }
     let need=Math.max(0,Math.ceil(reorder+daily*safety-eff)); // 補充目安（次の安全在庫まで。日野出保管も差し引く）
     if(coverNeed>need)need=coverNeed;                         // ③ 45日分に足りない量の方が多ければそちらを採用
     if(m.minLot&&need>0)need=Math.ceil(need/m.minLot)*m.minLot;
-    return {m,theo,scrap,received:rec[m.id]||0,stock,hinode,eff,daily,stockDays,thresholdDays,reorder,warn,need,off,mode,periodicDue,periodicNext,switchDue,switchReason,
+    return {m,theo,scrap,received:rec[m.id]||0,stock,hinode,eff,daily,stockDays,thresholdDays,reorder,needStock,needSrc,warn,need,off,mode,periodicDue,periodicNext,switchDue,switchReason,
       hasFuture,runoutDate,runoutDays,futureTotal,
       coverOn,coverDays,coverWarn,coverHave,coverDaily,coverSrc,
       hasSeason:hasSeason(m),suggest:seasonSuggest(m),order:openOrderOf(m.id)};
@@ -774,6 +808,13 @@ function computeStock(){
 }
 
 /* =================== ALERTS (also to 電子黒板) =================== */
+// ④ 破棄率の高いアラートは「理由を記入」したら消える：最新の棚卸に理由がある／その棚卸日以降に破棄理由の記録がある＝記入済み
+function latestStocktakeOf(mid){ return S.stocktakes.filter(s=>s.materialId===mid).sort((a,b)=>(a.date||'').localeCompare(b.date||'')).pop()||null; }
+function scrapAcked(m){
+  const st=latestStocktakeOf(m.id); if(st&&st.reason) return true;
+  const lg=(S.scrapLog||[]).filter(x=>x.materialId===m.id).sort((a,b)=>(a.at||'').localeCompare(b.at||'')).pop();
+  return !!(lg && (!st || (lg.at||'').slice(0,10)>=(st.date||'')));
+}
 function buildAlerts(){
   const rows=computeStock();
   const reorder=[],deliver=[],scrap=[],periodic=[];
@@ -803,8 +844,7 @@ function buildAlerts(){
   const pct=Number(S.settings.scrapAlertPct||0);
   S.materials.forEach(m=>{
     if(Number(m.scrapRate||0)>pct){
-      const st=[...S.stocktakes].reverse().find(s=>s.materialId===m.id);
-      if(!st||!st.reason) scrap.push({name:m.name,rate:m.scrapRate});
+      if(!scrapAcked(m)) scrap.push({id:m.id,name:m.name,rate:m.scrapRate});
     }
   });
   return {reorder,deliver,scrap,periodic,rows};
@@ -884,7 +924,7 @@ function renderDash(){
   a.reorder.forEach(r=>items.push(`<span class="pill reorder">🛒 ${r.name}（${r.cover?('あと'+(r.cover.have!=null?fmt(r.cover.have):'0')+'日分 ＜ 基準'+fmt(r.cover.days)+'日分'):(r.threshold!=null?'残り '+fmt(r.stock)+' ≤ しきい値 '+fmt(r.threshold):(r.runoutDate?'在庫 '+fmt(r.stock)+' ／ 切れ予定 '+r.runoutDate.slice(5)+'（あと'+fmt(r.runoutDays)+'日）':'在庫 '+fmt(r.stock)+(r.days!=null?' ／ あと'+r.days+'日':'')))}${r.hinode?'／日野出 '+fmt(r.hinode):''}）</span>`));
   a.deliver.filter(d=>d.dueReached).forEach(d=>items.push(`<span class="pill deliver">🚚 ${d.name} 納品予定（${d.due||''}）${d.late?' <b>※遅延</b>':''}</span>`));
   a.periodic.forEach(p=>items.push(`<span class="pill" style="background:#e0f2fe;color:#075985">🔔 ${p.name} 定期チェック時期（毎${p.days}日）</span>`));
-  a.scrap.forEach(s=>items.push(`<span class="pill scrap">🗑 ${s.name} 破棄率高い（${fmt1(s.rate)}%）理由未記入</span>`));
+  a.scrap.forEach(s=>items.push(`<span class="pill scrap" style="cursor:pointer" onclick="openScrapDlg('${s.id}')" title="クリックして理由を記入するとアラートが消えます（履歴に残ります）">🗑 ${s.name} 破棄率高い（${fmt1(s.rate)}%）理由未記入 → 理由を入力</span>`));
   rows.forEach(r=>{
     if(r.suggest==='off')items.push(`<span class="pill deliver" style="cursor:pointer" onclick="toggleSeason('${r.m.id}')">🕒 ${r.m.name} はそろそろ季節終わり → 季節外にする</span>`);
     if(r.suggest==='on')items.push(`<span class="pill" style="background:#dcfce7;color:#15803d;cursor:pointer" onclick="toggleSeason('${r.m.id}')">🌱 ${r.m.name} のシーズンです → シーズンに戻す</span>`);
@@ -971,7 +1011,7 @@ function renderDash(){
       <td>${showAuto?fmt1(r.daily):'—'}</td>
       <td>${showAuto?projTxt:'—'}</td>
       <td class="l">${showAuto?'<span class="daybar"><span style="width:'+Math.round(ratio*100)+'%;background:'+barColor+'"></span></span>':'<span class="muted">—</span>'}</td>
-      <td>${showAuto?fmt(r.reorder)+'<br><span class="muted" style="font-size:11px">閾値 '+r.thresholdDays+'日</span>':'—'}</td>
+      <td>${r.off?'—':(r.needStock!=null?'<b>'+fmt(r.needStock)+'</b><br><span class="muted" style="font-size:11px">'+(r.needSrc==='しきい値'?'しきい値':r.needSrc+'・'+r.thresholdDays+'日分')+'</span>':'<span class="muted" style="font-size:11px">'+(r.needSrc||(r.mode==='periodic'?'定期チェック':'—'))+'</span>')}</td>
       <td class="l ${cls}">${action}</td>
       <td>${(r.warn&&!r.order&&r.mode!=='periodic')?fmt(r.need):'—'}</td>
       <td class="l muted">${r.m.supplier||'—'} / ${r.m.leadDays||0}日</td></tr>`;
@@ -1044,7 +1084,9 @@ function renderStock(){
         <input id="st_r_${i}" placeholder="理由（破棄が多い時）" value="${esc(reason)}" style="width:170px;margin-left:6px"></td></tr>`;
   }).join('');
   stRows.forEach((r,i)=>stCalc(i));
-  document.getElementById('st_meta').textContent=date?('棚卸確認日 '+date+'（'+month+' として記録）'):'棚卸を確認した日を選んでください';
+  document.getElementById('st_meta').textContent=(date?('棚卸確認日 '+date+'（'+month+' として記録）'):'棚卸を確認した日を選んでください')+
+    '　／　理論使用＝'+(S.settings.startDate||'')+'〜'+(S.settings.baseDate||todayStr())+' の荷造数（発注書）×BOM'+(S.live&&S.live.isLive?'':'（発注書 未取得）');
+  renderScrapLog();
 }
 function stCalc(i){
   const r=stRows[i];const av=document.getElementById('st_a_'+i).value;
@@ -1465,6 +1507,29 @@ document.getElementById('o_save').addEventListener('click',(e)=>{
   if((m.alertMode||'auto')==='periodic') m.lastDone=date;   // 定期品は発注＝チェック完了とみなす
   save();recalcAll();renderOrders();cloudPushNow();          // ⑤ 発注はその場で発注履歴へ＋全PCへ送信
 });
+let _scrapMid=null;
+function openScrapDlg(mid){ const m=matById(mid); if(!m) return; _scrapMid=mid;
+  const st=latestStocktakeOf(mid);
+  document.getElementById('sc_info').textContent=m.name+'　現在の破棄率 '+fmt1(m.scrapRate)+'%（アラート基準 '+S.settings.scrapAlertPct+'%）'+(st?'／直近の棚卸 '+st.date+'（ロス '+fmt(st.loss)+'）':'');
+  document.getElementById('sc_name').value=m.name;
+  document.getElementById('sc_qty').value=(st&&st.loss>0)?Math.round(st.loss):'';
+  document.getElementById('sc_rate').value=Number(m.scrapRate||0);
+  document.getElementById('sc_reason').value='';
+  document.getElementById('scrapDlg').showModal(); }
+document.getElementById('sc_save').addEventListener('click',(e)=>{
+  const m=matById(_scrapMid); if(!m) return;
+  const reason=(document.getElementById('sc_reason').value||'').trim();
+  if(!reason){ e.preventDefault(); alert('理由を入力してください。'); return; }
+  S.scrapLog=S.scrapLog||[];
+  S.scrapLog.push({id:'SL'+Date.now(),at:nowStr(),materialId:m.id,name:(document.getElementById('sc_name').value||m.name).trim(),
+    qty:Number(document.getElementById('sc_qty').value||0),rate:Number(document.getElementById('sc_rate').value||0),reason,by:S.settings.deviceName||''});
+  const st=latestStocktakeOf(m.id); if(st&&!st.reason){ st.reason=reason; st.ack=true; }   // 棚卸記録の「理由」にも入れておく
+  save(); recalcAll(); renderStock(); cloudPushNow();
+});
+function renderScrapLog(){ const tb=document.querySelector('#scrapLogTable tbody'); if(!tb) return;
+  const L=[...(S.scrapLog||[])].sort((a,b)=>(b.at||'').localeCompare(a.at||''));
+  tb.innerHTML=L.map(x=>'<tr><td>'+esc(x.at)+'</td><td class="l">'+esc(x.name)+'</td><td>'+fmt(x.qty)+'</td><td>'+fmt1(x.rate)+'%</td><td class="l">'+esc(x.reason)+(x.by?' <span class="muted" style="font-size:11px">（'+esc(x.by)+'）</span>':'')+'</td></tr>').join('')
+    ||'<tr><td colspan="5" class="muted l">まだ記録はありません</td></tr>'; }
 let _delivId=null;
 function openDeliver(id){_delivId=id;const o=S.orders.find(x=>x.id===id);const m=o&&matById(o.materialId);
   if(!o||!m){alert('この発注は他のPCで削除・変更されたようです。画面を更新します。');recalcAll();renderOrders();return;}
@@ -1600,6 +1665,7 @@ function fetchLive(silent){
 function liveExc(r){ return /ﾜﾝﾍﾞｼﾞ|ワンベジ|サンプル|ｻﾝﾌﾟﾙ|合計|下茹で/.test(String(r.kubun||'')+String(r.tori||'')); }
 function applyLive(data,silent){
   if(!data||!data.rows){ if(silent) return; alert('データ形式が想定と違います。\nGASを新しいバージョンで再デプロイしたかご確認ください。');return;}
+  const before=JSON.stringify([S.funes,S.futureFunes,S.skus.length]);
   data.rows.forEach(r=>{
     if(!r.kubun||String(r.kubun).trim()==='')return;              // 区分空欄は取り込まない
     const key=skuKey(r.tori,r.kubun,r.irisu);
@@ -1619,7 +1685,10 @@ function applyLive(data,silent){
   S.live={asOf:data.asOf||todayStr(),isLive:true};
   document.getElementById('srcbadge').className='badge live';document.getElementById('srcbadge').textContent='🟢 発注書ライブ';
   document.getElementById('asof').textContent='取得 '+S.live.asOf+' ／ 期間 '+(data.start||S.settings.startDate)+'〜'+S.settings.baseDate;
-  save();renderUsage();recalcAll();
+  // 中身が変わった時だけ全PCへ送る（開くたびの取り直しでクラウドの版を無駄に進めない）
+  if(JSON.stringify([S.funes,S.futureFunes,S.skus.length])!==before) save();
+  else { try{ localStorage.setItem(LS,JSON.stringify(S)); }catch(e){} publishAlerts(); }
+  renderUsage();recalcAll();renderStock();
 }
 
 /* =================== CLOUD SYNC（ほかのPCと共有） =================== */
@@ -1651,7 +1720,7 @@ function cloudCheckNow(){ if(!shareEnabled())return;
   },()=>{});
 }
 // クラウドに保存するデータ（PCごとの設定は除く。cloudメタも除く）
-function stateForCloud(){ const c=JSON.parse(JSON.stringify(S)); delete c.cloud; delete c.backups; // 月末バックアップは専用シートに別保存（日次同期は軽く保つ）
+function stateForCloud(){ const c=JSON.parse(JSON.stringify(S)); delete c.cloud; delete c.backups; c.appVer=APP_VER; // 月末バックアップは専用シートに別保存（日次同期は軽く保つ）
   if(c.settings){ delete c.settings.gasUrl; delete c.settings.shareOn; delete c.settings.deviceName; delete c.settings.baseDate; }   // 基準日はPCごとに常に今日
   return JSON.stringify(c); }
 // JSONP読み取り（file://でも動く）
@@ -1679,6 +1748,9 @@ function cloudPullFull(onDone,force){
   },()=>{ setSyncStatus('同期エラー：接続失敗','#d9534f'); onDone&&onDone(false); });
 }
 function applyCloudState(cloudS,meta){
+  // 他のPCが新しい版の画面で保存していたら、この画面は古い＝読み直して最新の画面にする（1回だけ）
+  if(Number(cloudS.appVer||0)>APP_VER){ let done=''; try{done=sessionStorage.getItem('shizaiReloadVer')||'';}catch(e){}
+    if(done!==String(cloudS.appVer)){ try{sessionStorage.setItem('shizaiReloadVer',String(cloudS.appVer));}catch(e){} setSyncStatus('新しい版があります。読み直します…','#555'); location.reload(); return; } }
   const g=S.settings.gasUrl, on=S.settings.shareOn, dev=S.settings.deviceName; // PCごとの設定は保持
   const keepBackups=S.backups||[];                                             // このPCのバックアップ履歴は保持（クラウドには含めない）
   S=cloudS; S.settings=S.settings||{};
@@ -1686,7 +1758,7 @@ function applyCloudState(cloudS,meta){
   S.settings.gasUrl=g; S.settings.shareOn=on; S.settings.deviceName=dev;
   S.settings.baseDate=todayStr();
   S.backups=keepBackups;
-  S.funes=S.funes||{};S.futureFunes=S.futureFunes||{};S.orders=S.orders||[];S.stocktakes=S.stocktakes||[];S.boms=S.boms||{};
+  S.funes=S.funes||{};S.futureFunes=S.futureFunes||{};S.orders=S.orders||[];S.stocktakes=S.stocktakes||[];S.boms=S.boms||{};S.scrapLog=S.scrapLog||[];
   S.cloud={rev:Number(meta.rev)||0,savedAt:meta.savedAt||'',savedBy:meta.savedBy||''};
   migHiroshimaSku();   // クラウド側が熊本の雛形のままでも、読み込んだ時点で広島のSKUに直す
   const mig0929=migHiro0929();   // 資材名変更・土付き箱の使用OFF（クラウドが未移行なら、直した内容をクラウドへ送り返す）
@@ -1774,11 +1846,12 @@ function initCloud(){
 }
 // 2026-10-02〜 開いた時に、今日まだ発注書から取っていなければ自動で取得（荷造数・今後の予定を最新に）。
 //   以前は「🔗 発注書から取得」を押した時だけ更新され、9/28の値のまま切れ予定を計算していた。
+//   2026-10-02（第2弾）〜 「今日取得済み」でも開くたびに必ず取り直す（他のPCが古い画面で0を保存していても、開けば直る）＋開きっぱなしなら30分おき。
 function autoFetchLive(){
   if(!(S.settings.gasUrl||'').trim()) return;
-  if(S.live && S.live.isLive && S.live.asOf===todayStr()) return;
   fetchLive(true);
 }
+setInterval(()=>{ if(S&&S.settings) autoFetchLive(); },30*60*1000);
 // 開きっぱなしで日付が変わったら、基準日を今日に進めて計算し直す
 setInterval(()=>{
   if(S && S.settings && S.settings.baseDate!==todayStr()){
