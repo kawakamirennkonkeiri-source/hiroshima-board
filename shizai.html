@@ -162,8 +162,8 @@ code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
   <div class="sec-title">月末棚卸（実数合わせ → 破棄率を自動学習）</div>
   <div class="hint">
   棚卸をした日を選び、<b>実際の在庫数</b>を入力して「<b>この日の棚卸を確定</b>」すると：<br>
-  <b>理論在庫は在庫ダッシュボードの「現在庫」と同じ数</b>です（基準在庫＋入庫−理論使用−見込み破棄±再棚卸）。<br>
-  ① <b>ロス（破棄合計）＝見込み破棄＋差（理論在庫−実在庫）</b>から <b>破棄率＝ロス÷理論使用量</b> を自動計算し、資材マスタの破棄率を更新（回数を重ねるほど精度UP）。<br>
+  <b>理論在庫は在庫ダッシュボードの「現在庫」と同じ数</b>です（基準在庫＋入庫−理論使用±再棚卸）。<br>
+  ① <b>ロス＝理論在庫−実在庫</b>から <b>破棄率＝ロス÷理論使用量</b> を自動計算し、資材マスタの破棄率を更新（回数を重ねるほど精度UP）。<br>
   ② 実在庫を新しい基準在庫にリセット（＝ドリフトをゼロ点合わせ）／起点日を<b>棚卸日の翌日</b>へ／バックアップを保存。<br>
   ③ 破棄率が <b id="stAlertPct">10</b>%（設定で変更可）を超えたら「⚠️破棄が多すぎ」を表示。<b>ダッシュボードの「🗑 破棄率高い」をクリック→商品名・個数・破棄率・理由を記入するとアラートが消え、下の「破棄理由の履歴」に残ります</b>。<br>
   <b>🔁 棚卸再確認</b>＝月の途中で数え直したいとき用。<b>実在庫を入力して押すと、現在庫だけを今の実数に合わせます</b>（破棄率の学習・起点日の更新・バックアップは行いません）。<br>
@@ -180,9 +180,8 @@ code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
     <table id="stTable">
       <thead><tr>
         <th class="l">資材</th><th>基準在庫</th><th>入庫</th><th>理論使用</th>
-        <th title="理論使用×いまの破棄率＝計算上もう捨てたとみなしている数">見込み破棄<br>(破棄率)</th>
-        <th title="棚卸再確認で入れた実数への補正（±）">再棚卸<br>(補正)</th><th title="基準在庫＋入庫−理論使用−見込み破棄±再棚卸＝在庫ダッシュボードの「現在庫」と同じ">理論在庫<br>(＝現在庫)</th>
-        <th>実在庫(入力)</th><th title="理論在庫−実在庫。0なら計算どおり">差</th><th title="見込み破棄＋差＝実際に捨てた合計">ロス<br>(破棄合計)</th><th>破棄率</th><th class="l">判定 / 理由</th>
+        <th title="棚卸再確認で入れた実数への補正（±）">再棚卸<br>(補正)</th><th title="基準在庫＋入庫−理論使用±再棚卸＝在庫ダッシュボードの「現在庫」と同じ">理論在庫<br>(＝現在庫)</th>
+        <th>実在庫(入力)</th><th title="理論在庫−実在庫">ロス</th><th>破棄率</th><th class="l">判定 / 理由</th>
       </tr></thead>
       <tbody></tbody>
     </table>
@@ -487,7 +486,7 @@ const SEED_SKUS = [
 ];
 /* =================== STATE =================== */
 const LS='shizai_app_v2';
-const APP_VER=20261002.3;   // 画面の版。クラウドに新しい版で保存されていたら、古い画面は自動で読み直す（古い画面が古い計算で上書きしないように）
+const APP_VER=20261002.4;   // 画面の版。クラウドに新しい版で保存されていたら、古い画面は自動で読み直す（古い画面が古い計算で上書きしないように）
 let S=null;
 function skuKey(t,k,i){return t+'|'+k+'|'+i;}
 function bunruiTag(k){
@@ -719,7 +718,7 @@ function computeStock(){
   return S.materials.map(m=>{
     const theo=use[m.id]||0;
     const scrap=theo*(Number(m.scrapRate||0)/100);
-    const stock=Number(m.initStock||0)+(rec[m.id]||0)-theo-scrap+Number(m.stockAdj||0);
+    const stock=Number(m.initStock||0)+(rec[m.id]||0)-theo+Number(m.stockAdj||0);   // 2026-10-02 見込み破棄（理論使用×破棄率）は現在庫から引かない（曽我さん指示）
     const hinode=Number(m.hinodeStock||0);             // 日野出さん保管分（頼めば2日弱で届く自社在庫）
     const eff=stock+hinode;                            // 実質在庫＝現在庫＋日野出保管（発注判定に使う）
     const gross=theo+scrap;
@@ -1066,10 +1065,8 @@ function renderStock(){
   document.getElementById('stAlertPct').textContent=S.settings.scrapAlertPct;
   const rows=computeStock();
   stRows=rows.map(r=>{
-    // 理論在庫＝ダッシュボードの「現在庫」と同じ値（基準在庫＋入庫−理論使用−見込み破棄±再棚卸）。2026-10-02 両画面で一致させた
-    // preStock＝見込み破棄を引く前の在庫。ロス（破棄合計）・破棄率の学習はこちら基準（見込み破棄も含めた実際の破棄量を出すため）
-    const preStock=Number(r.m.initStock||0)+r.received-r.theo+Number(r.m.stockAdj||0);
-    return {mid:r.m.id,name:r.m.name,base:r.m.initStock,rec:r.received,theo:r.theo,expScrap:r.scrap,preStock,theoStock:r.stock,adj:Number(r.m.stockAdj||0),rate:Number(r.m.scrapRate||0)};
+    // 理論在庫＝ダッシュボードの「現在庫」と同じ値（基準在庫＋入庫−理論使用±再棚卸）
+    return {mid:r.m.id,name:r.m.name,base:r.m.initStock,rec:r.received,theo:r.theo,theoStock:r.stock,adj:Number(r.m.stockAdj||0)};
   });
   const date=document.getElementById('st_date').value;const month=date?date.slice(0,7):'';
   const tb=document.querySelector('#stTable tbody');
@@ -1079,11 +1076,9 @@ function renderStock(){
     const reason=prev?prev.reason||'':'';
     return `<tr>
       <td class="l">${r.name}</td><td>${fmt(r.base)}</td><td>${fmt(r.rec)}</td><td>${fmt(r.theo)}</td>
-      <td class="muted">${r.expScrap?'−'+fmt(r.expScrap)+'<br><span style="font-size:10px">('+fmt1(r.rate)+'%)</span>':'—'}</td>
       <td class="${r.adj?'state-wait':'muted'}">${r.adj?((r.adj>0?'+':'−')+fmt(Math.abs(r.adj))):'—'}</td>
       <td style="font-weight:800">${fmt(r.theoStock)}</td>
       <td><input class="cell" type="number" id="st_a_${i}" value="${actual}" oninput="stCalc(${i})"></td>
-      <td id="st_diff_${i}" class="muted">—</td>
       <td id="st_loss_${i}" class="muted">—</td><td id="st_rate_${i}" class="muted">—</td>
       <td class="l"><span id="st_judge_${i}"></span>
         <input id="st_r_${i}" placeholder="理由（破棄が多い時）" value="${esc(reason)}" style="width:170px;margin-left:6px"></td></tr>`;
@@ -1096,12 +1091,8 @@ function renderStock(){
 function stCalc(i){
   const r=stRows[i];const av=document.getElementById('st_a_'+i).value;
   const loss=document.getElementById('st_loss_'+i),rate=document.getElementById('st_rate_'+i),judge=document.getElementById('st_judge_'+i);
-  const diff=document.getElementById('st_diff_'+i);
-  if(av===''){loss.textContent='—';rate.textContent='—';judge.textContent='';diff.textContent='—';return;}
-  const dV=r.theoStock-Number(av);   // 理論在庫（＝ダッシュボードの現在庫）との差
-  diff.textContent=(dV>0?'−':(dV<0?'+':'±'))+fmt(Math.abs(dV));
-  diff.className=Math.abs(dV)<0.5?'state-ok':'state-wait';
-  const lossV=r.preStock-Number(av); // 破棄合計（見込み破棄＋差）
+  if(av===''){loss.textContent='—';rate.textContent='—';judge.textContent='';return;}
+  const lossV=r.theoStock-Number(av); // ロス＝理論在庫−実在庫
   const rateV=r.theo>0?(lossV/r.theo*100):0;
   loss.textContent=fmt(lossV);rate.textContent=fmt1(rateV)+'%';
   const pct=Number(S.settings.scrapAlertPct||0);
@@ -1127,7 +1118,7 @@ function commitStocktake(){
   });
   stRows.forEach((r,i)=>{
     const av=document.getElementById('st_a_'+i).value;if(av==='')return;
-    const actual=Number(av);const loss=r.preStock-actual;const rate=r.theo>0?Math.max(0,loss/r.theo*100):0;
+    const actual=Number(av);const loss=r.theoStock-actual;const rate=r.theo>0?Math.max(0,loss/r.theo*100):0;
     const reason=document.getElementById('st_r_'+i).value;
     const m=matById(r.mid);
     // 破棄率を学習（過去と平均して精度UP：単純移動平均）
