@@ -73,7 +73,17 @@ var CFG = {
   NZ_WORK_BREAKS: [['08:30','09:00'], ['10:00','10:15'], ['12:00','13:00'], ['14:00','14:15']],
   // 広島の実データでの区分(kubun)は「洗い」「Mup」「C」「2S」等（?type=nizukuriで確認済み・2026-09-19）。
   // センターの「区分が"C/S"の1トークン」とは表記が違うため広島専用の判定にする。
-  NZ_CS_KUBUN_RE: /^(C|\d*S)$/,
+  //   2026-10-03〜 「CS」「C・S」「CとS」等も対象（曽我さん指示：C・CS・CとSは歩留まりの「本日作った分」に含めない）。
+  NZ_CS_KUBUN_RE: /^\s*(C|\d*S|C\s*[・と&＆\/／・]?\s*S)\s*$/i,
+  // ② 繰越在庫（期首）：この基準日の終了時点の在庫を「累計」の出発点にする（それ以前の生産ログは使わない）。
+  //   シートが無ければ下の初期値で自動作成（2026-10-03・曽我さんから10/3終了時点の累計の連絡）。以後はシートを直せばよい。
+  NZ_OPEN_SHEET: '荷造り繰越在庫',
+  NZ_OPEN_SEED: [
+    ['2026-10-03', 'ハローズ', '土付き', 3.34, 14],
+    ['2026-10-03', 'ハローズ', '洗い',   3.34, 120],
+    ['2026-10-03', '万代',     '洗い',   3.34, 1005],
+    ['2026-10-03', 'マルヨシ', 'Mup',    5,    220]
+  ],
   // ⑦-b 本日荷造りタブの表示ウィンドウ（何日分・起点日）を全PC共有するためのキー（PropertiesService）
   NZ_VIEW_PROP_KEY: 'NZ_VIEW_STATE',
   NZ_VIEW_MAX_DAYS: 14,
@@ -827,7 +837,8 @@ function debugPool_(params){
     if(!x.own && !x.carryIn && !x.surplusOut && !x.leftover && k.split('|')[0] < todayReal) return;   // 過去で動きの無い注文は省略
     out[k] = x;
   });
-  return { today: todayReal, count: Object.keys(out).length, pool: out };
+  var open = {}; try{ open = nzOpeningRead_(); }catch(e){ open = { error: String(e) }; }
+  return { today: todayReal, opening: open, count: Object.keys(out).length, pool: out };
 }
 function debugOrder_(params){
   params = params || {};
@@ -1038,13 +1049,54 @@ function nzAllOrdersByGroup_(){
   }
   return groups;
 }
+// 繰越在庫（期首）の読み込み：{ date:'yyyy-MM-dd'（いちばん新しい基準日）, stock:{ '取引先|区分|入数': c/s } }
+//   書き込み先は電子黒板データ（DATA_SS_ID）だけ。発注書には書かない。
+var _NZ_OPEN_MEMO_ = null;
+function nzOpeningRead_(){
+  if(_NZ_OPEN_MEMO_) return _NZ_OPEN_MEMO_;
+  var ss = ssById_(CFG.DATA_SS_ID);
+  var sh = ss.getSheetByName(CFG.NZ_OPEN_SHEET);
+  if(!sh){
+    sh = ss.insertSheet(CFG.NZ_OPEN_SHEET);
+    var rows = [['基準日（この日の終了時点）', '取引先', '区分', '入数', '在庫c/s', 'メモ']];
+    (CFG.NZ_OPEN_SEED || []).forEach(function(r){ rows.push([r[0], r[1], r[2], r[3], r[4], '10/3終了時点の累計（曽我さん連絡）']); });
+    sh.getRange(1, 1, rows.length, 1).setNumberFormat('@');
+    sh.getRange(1, 1, rows.length, 6).setValues(rows);
+    try{ sh.setFrozenRows(1); }catch(e){}
+  }
+  var v = sh.getDataRange().getValues();
+  var best = '', byDate = {};
+  for(var i = 1; i < v.length; i++){
+    var d0 = v[i][0];
+    var d = (d0 instanceof Date) ? Utilities.formatDate(d0, CFG.TZ, 'yyyy-MM-dd') : String(d0 || '').trim().replace(/\//g, '-');
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(d)) continue;
+    var cust = String(v[i][1] || '').trim(), kubun = String(v[i][2] || '').trim(), nyusu = Number(v[i][3]) || 0;
+    var cs = Math.round(Number(v[i][4]) || 0);
+    if(!cust || !kubun) continue;
+    var g = cust + '|' + kubun + '|' + nyusu;
+    byDate[d] = byDate[d] || {};
+    byDate[d][g] = (byDate[d][g] || 0) + cs;
+    if(d > best) best = d;
+  }
+  return (_NZ_OPEN_MEMO_ = { date: best, stock: best ? byDate[best] : {} });
+}
 // 戻り値：{ 注文キー: { own:自分の分として使った数, ownToday:そのうち今日作った分, carryIn:余りから回ってきた数,
 //                      surplusOut:自分の入力のうち他の注文へ回った/余った数, leftover:どこにも入らない余り（先頭の注文のみ） } }
 function nzPoolCompute_(todayReal){
   if(_NZ_POOL_MEMO_) return _NZ_POOL_MEMO_;
   var logMap = nzLogReadAll_();
   var groups = nzAllOrdersByGroup_();
+  // 繰越在庫（期首）：基準日の終了時点の在庫を出発点にする（2026-10-03〜）。
+  //   ・基準日までの生産ログは使わない（在庫の数字に含まれている）
+  //   ・納品日が基準日までの注文は「済み」扱い（在庫を食わない）
+  //   ・在庫は基準日の生産として、納品日が基準日より後の注文へ早い順に充てる
+  var open = { date: '', stock: {} };
+  try{ open = nzOpeningRead_(); }catch(e){}
   var lotsBy = {};   // g -> [{prod, src, left}]
+  Object.keys(open.stock || {}).forEach(function(g){
+    var c = Math.round(Number(open.stock[g]) || 0); if(c <= 0) return;
+    (lotsBy[g] = lotsBy[g] || []).push({ prod: open.date, src: '', ddate: '', left: c, opening: true });
+  });
   Object.keys(logMap).forEach(function(k){
     var p = k.split('|'); if(p.length < 4) return;
     if(!p[2]) return;   // 区分が空＝kg単位グループは対象外
@@ -1052,6 +1104,7 @@ function nzPoolCompute_(todayReal){
     var lm = logMap[k] || {};
     Object.keys(lm).forEach(function(pd){
       var c = Math.round(Number(lm[pd]) || 0); if(c <= 0 || !pd) return;
+      if(open.date && pd <= open.date) return;   // 基準日までの生産は繰越在庫に含まれている
       (lotsBy[g] = lotsBy[g] || []).push({ prod: pd, src: k, ddate: p[0], left: c });
     });
   });
@@ -1062,7 +1115,16 @@ function nzPoolCompute_(todayReal){
     var dates = Object.keys(od).sort();
     var lots = (lotsBy[g] || []).sort(function(a, b){ return a.prod < b.prod ? -1 : a.prod > b.prod ? 1 : (a.ddate < b.ddate ? -1 : a.ddate > b.ddate ? 1 : 0); });
     var info = {};
-    dates.forEach(function(d){ info[d + '|' + g] = { qty: od[d], own: 0, ownToday: 0, carryIn: 0, surplusOut: 0, leftover: 0 }; });
+    dates.forEach(function(d){
+      var it = { qty: od[d], own: 0, ownToday: 0, carryIn: 0, surplusOut: 0, leftover: 0 };
+      if(open.date && d <= open.date){
+        // 基準日までに納品の注文＝済み。今日の入力があればその分だけ「本日」に見せる（在庫計算には使わない）
+        it.own = it.qty; it.closed = true;
+        var tl = (logMap[d + '|' + g] || {})[todayReal];
+        if(tl) it.ownToday = Math.min(it.qty, Math.round(Number(tl) || 0));
+      }
+      info[d + '|' + g] = it;
+    });
     // 1) 自分の注文に入力した分を、まず自分に充てる（古い生産日から・注文数まで）
     lots.forEach(function(l){
       var o = info[l.src]; if(!o) return;   // 注文が発注書から消えた/日付が変わった＝全部が余り
@@ -1284,6 +1346,8 @@ function getNizukuriFull_(params){
   var logMap = nzLogReadAll_();
   var pool = {};
   try{ pool = nzPoolCompute_(todayReal); }catch(e){ pool = {}; }
+  var openDate = '';
+  try{ openDate = nzOpeningRead_().date || ''; }catch(e){}
 
   var orders = base.orders.map(function(o){
     var key = nzOrderKey_(date, o);
@@ -1298,6 +1362,8 @@ function getNizukuriFull_(params){
     if(pi && pi.qty === totalQty){
       // ② 繰り越しあり：累計＝自分に充てた分（今日の入力ぶんを除く）＋余りから回ってきた分
       pooled = true;
+      // 繰越在庫の基準日（当日）に、基準日より後の注文へ入れた分は在庫の数字に含まれている＝本日欄には出さない
+      if(!pi.closed && openDate && todayReal <= openDate) madeToday = 0;
       carryIn = pi.carryIn;
       madePrev = pi.own - pi.ownToday + pi.carryIn;
       rest = Math.max(0, totalQty - pi.own - pi.carryIn);
@@ -1329,7 +1395,7 @@ function getNizukuriFull_(params){
   if(!params._noFlush) nzSnapFlush_();
   if(params.ordersOnly){
     // 複数日表示用：注文一覧だけ（実績・舟数・終了時刻は電子黒板ホームの bundle 側で今日ぶんだけ計算する）
-    return { sheet: base.sheet, date: date, rowFound: base.rowFound, orders: orders, totalQty: base.totalQty, totalKg: base.totalKg };
+    return { sheet: base.sheet, date: date, rowFound: base.rowFound, orders: orders, totalQty: base.totalQty, totalKg: base.totalKg, openDate: openDate };
   }
 
   // 本日作った分の実績（その他サンプル＝kg単位グループは、センターと同じ理由で対象外）
@@ -1344,8 +1410,9 @@ function getNizukuriFull_(params){
     var kubun = p[2] || '', nyusu = Number(p[3]) || 0;
     if(!kubun || !nyusu) return;
     var kg = made * nyusu;
+    // 2026-10-03〜 区分C・S（CS・CとS等）は歩留まりの「本日作った分」に含めない（曽我さん指示）。csKgは加工率の予備計算用に別集計
+    if(CFG.NZ_CS_KUBUN_RE.test(kubun)){ csKg += kg; return; }
     allKg += kg;
-    if(CFG.NZ_CS_KUBUN_RE.test(kubun)) csKg += kg;
   });
   allKg = Math.round(allKg * 100) / 100; csKg = Math.round(csKg * 100) / 100;
 
@@ -1378,7 +1445,7 @@ function getNizukuriFull_(params){
       if(hit && typeof hit.value === 'number') orderCsRate = hit.value;
     }
   }catch(e){}
-  var kakouRitsu = (orderCsRate != null) ? (orderCsRate * 100) : ((allKg > 0) ? (csKg / allKg * 100) : null);
+  var kakouRitsu = (orderCsRate != null) ? (orderCsRate * 100) : ((allKg + csKg > 0) ? (csKg / (allKg + csKg) * 100) : null);
 
   // 終了目標時刻＝本日の荷造り舟数（数量変更の上書きがあればそちら）÷（本日出勤人数×2舟/時）。
   //   本日の荷造り舟数＝収穫舟数＋前日ｽﾄｯｸ舟数−本日ｽﾄｯｸ舟数＋生産者タブの収穫舟数（2026-09-29・曽我さん指定の式）。
@@ -1395,7 +1462,7 @@ function getNizukuriFull_(params){
 
   return {
     sheet: base.sheet, date: date, rowFound: base.rowFound,
-    orders: orders, totalQty: base.totalQty, totalKg: base.totalKg,
+    orders: orders, totalQty: base.totalQty, totalKg: base.totalKg, openDate: openDate,
     targetOverride: null, targetFunes: targetFunes,
     madeAllKg: allKg, madeCsKg: csKg, totalFunes: totalFunes,
     budomari: budomari, kakouRitsu: kakouRitsu, finishTime: finishTime

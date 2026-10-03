@@ -846,9 +846,12 @@
     return '';
   }
   // ⑦-b 表示ウィンドウ（複数日）ぶんの本日荷造りを描画。センター電子黒板の日付セクション表示に相当。
+  // 繰越在庫の基準日（2026-10-03〜）：この日までの生産は「荷造り繰越在庫」シートの在庫に含まれる＝過去分の修正は基準日の翌日から
+  var NZ_OPEN_DATE = '';
   function renderNizukuriDays_(daysArr){
     var dates = nzViewDates_();
     NZ_DAY_ITEMS = (daysArr || []).map(function(d, i){ return { date: dates[i] || (d && d.date) || '', data: d }; });
+    (daysArr || []).forEach(function(d){ if(d && d.openDate) NZ_OPEN_DATE = d.openDate; });
     nzRenderDayItems_();
     renderSkuDiff();   // 🔍進捗差分は同じNZ_DAY_ITEMSを見ているので、新しいデータが届くたびに再計算する
   }
@@ -918,7 +921,7 @@
       '</div>' +
       '<div class="prev-fix" style="display:none;">' +
         '<span class="prev-fix-lbl">過去に作った分を直す：</span>' +
-        '<input type="date" class="q-prev-date" max="' + yISO + '" value="' + yISO + '" data-key="' + escAttr_(o.key) + '" onchange="nzPrevDatePick(this)">' +
+        '<input type="date" class="q-prev-date" max="' + yISO + '"' + (NZ_OPEN_DATE ? ' min="' + nzAddDaysISO_(NZ_OPEN_DATE, 1) + '"' : '') + ' value="' + yISO + '" data-key="' + escAttr_(o.key) + '" onchange="nzPrevDatePick(this)">' +
         '<input type="number" class="q-prev-amt" min="0" step="1" placeholder="0" data-key="' + escAttr_(o.key) + '" oninput="nzPrevAmtInput(this)" onchange="nzPrevAmtCommit(this)">' +
         '<small>' + U + '</small>' +
       '</div>' +
@@ -946,9 +949,13 @@
   function nzRecalcRest_(o){
     var qty = Math.round(o.qty || 0);
     if(o.pooled){
-      var need = qty - (o.madePrev || 0);
+      // 累計は注文数まで。超えた分は「余り」として次の注文へ（2026-10-03：累計に注文数以上を入れると1596のように表示されていた）
+      var raw = Math.max(0, (o._prevRaw != null) ? o._prevRaw : (o.madePrev || 0));
+      var prevOver = Math.max(0, raw - qty);
+      o.madePrev = Math.min(qty, raw);
+      var need = qty - o.madePrev;
       o.rest = Math.max(0, need - (o.madeToday || 0));
-      o.surplus = Math.max(0, (o.madeToday || 0) - Math.max(0, need));
+      o.surplus = prevOver + Math.max(0, (o.madeToday || 0) - Math.max(0, need));
     } else {
       o.rest = qty - (o.madePrev || 0) - (o.madeToday || 0);
     }
@@ -997,7 +1004,8 @@
     if(!delta) return;
     nzMarkEdit_();
     o.prodLog[d] = newVal;
-    o.madePrev = Math.max(0, (o.madePrev || 0) + delta);
+    o._prevRaw = ((o._prevRaw != null) ? o._prevRaw : (o.madePrev || 0)) + delta;   // 入力どおりの累計（注文数を超えうる）
+    o.madePrev = Math.max(0, o._prevRaw);
     nzRecalcRest_(o);
     var row = amtInp.closest('.nz-row');
     nzRefreshSurplus_(row, o);
@@ -1033,7 +1041,7 @@
       gasPost_('nizukuriMadeSave', {
         date: item.date, prodDate: d, cust: o.cust, kubun: o.kubun || '',
         nyusu: o.nyusu || 0, cases: cases, by: deviceLabel_()
-      }, function(dres, err){});
+      }, function(dres, err){});   // 余りの振り分け（次の注文の「うち繰越」）は30秒ごとの読み直しでGASの計算が反映される
     }, 500);
   }
   // 表示中の日付セクションから、キー（date|取引先|区分|入数）の日付部分で該当セクションを引く
