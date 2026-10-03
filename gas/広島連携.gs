@@ -76,7 +76,7 @@ var CFG = {
   //   2026-10-03〜 「CS」「C・S」「CとS」等も対象（曽我さん指示：C・CS・CとSは歩留まりの「本日作った分」に含めない）。
   NZ_CS_KUBUN_RE: /^\s*(C|\d*S|C\s*[・と&＆\/／・]?\s*S)\s*$/i,
   // ② 繰越在庫（期首）：この基準日の終了時点の在庫を「累計」の出発点にする（それ以前の生産ログは使わない）。
-  //   シートが無ければ下の初期値で自動作成（2026-10-03・曽我さんから10/3終了時点の累計の連絡）。以後はシートを直せばよい。
+  //   シートが無ければ下の初期値で自動作成（2026-10-03・曽我さんから10/3の累計の連絡。当日作った分は別＝足す）。以後はシートを直せばよい。
   NZ_OPEN_SHEET: '荷造り繰越在庫',
   NZ_OPEN_SEED: [
     ['2026-10-03', 'ハローズ', '土付き', 3.34, 14],
@@ -1058,7 +1058,7 @@ function nzOpeningRead_(){
   var sh = ss.getSheetByName(CFG.NZ_OPEN_SHEET);
   if(!sh){
     sh = ss.insertSheet(CFG.NZ_OPEN_SHEET);
-    var rows = [['基準日（この日の終了時点）', '取引先', '区分', '入数', '在庫c/s', 'メモ']];
+    var rows = [['基準日（この日の作業前の在庫）', '取引先', '区分', '入数', '在庫c/s', 'メモ']];
     (CFG.NZ_OPEN_SEED || []).forEach(function(r){ rows.push([r[0], r[1], r[2], r[3], r[4], '10/3終了時点の累計（曽我さん連絡）']); });
     sh.getRange(1, 1, rows.length, 1).setNumberFormat('@');
     sh.getRange(1, 1, rows.length, 6).setValues(rows);
@@ -1087,9 +1087,9 @@ function nzPoolCompute_(todayReal){
   var logMap = nzLogReadAll_();
   var groups = nzAllOrdersByGroup_();
   // 繰越在庫（期首）：基準日の終了時点の在庫を出発点にする（2026-10-03〜）。
-  //   ・基準日までの生産ログは使わない（在庫の数字に含まれている）
+  //   ・基準日より前の生産ログは使わない（在庫の数字に含まれている）。基準日当日に作った分は在庫に足す
   //   ・納品日が基準日までの注文は「済み」扱い（在庫を食わない）
-  //   ・在庫は基準日の生産として、納品日が基準日より後の注文へ早い順に充てる
+  //   ・在庫は基準日の生産として、納品日が基準日より後の注文へ早い順に充てる（＝基準日の作業前の在庫）
   var open = { date: '', stock: {} };
   try{ open = nzOpeningRead_(); }catch(e){}
   var lotsBy = {};   // g -> [{prod, src, left}]
@@ -1104,7 +1104,10 @@ function nzPoolCompute_(todayReal){
     var lm = logMap[k] || {};
     Object.keys(lm).forEach(function(pd){
       var c = Math.round(Number(lm[pd]) || 0); if(c <= 0 || !pd) return;
-      if(open.date && pd <= open.date) return;   // 基準日までの生産は繰越在庫に含まれている
+      // 基準日より前の生産は繰越在庫に含まれている。基準日当日に作った分は在庫とは別（2026-10-03曽我さん回答）＝足す。
+      //   ただし基準日までに納品の注文（済み扱い）へ入れた当日分は、その注文で使った分なので余りにしない。
+      if(open.date && pd < open.date) return;
+      if(open.date && pd === open.date && p[0] <= open.date) return;
       (lotsBy[g] = lotsBy[g] || []).push({ prod: pd, src: k, ddate: p[0], left: c });
     });
   });
@@ -1362,8 +1365,6 @@ function getNizukuriFull_(params){
     if(pi && pi.qty === totalQty){
       // ② 繰り越しあり：累計＝自分に充てた分（今日の入力ぶんを除く）＋余りから回ってきた分
       pooled = true;
-      // 繰越在庫の基準日（当日）に、基準日より後の注文へ入れた分は在庫の数字に含まれている＝本日欄には出さない
-      if(!pi.closed && openDate && todayReal <= openDate) madeToday = 0;
       carryIn = pi.carryIn;
       madePrev = pi.own - pi.ownToday + pi.carryIn;
       rest = Math.max(0, totalQty - pi.own - pi.carryIn);
