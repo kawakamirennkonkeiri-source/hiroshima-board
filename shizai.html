@@ -78,6 +78,32 @@ dialog::backdrop{background:rgba(15,23,42,.4)}
 .dlg-f{padding:12px 18px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:8px}
 small.help{color:var(--muted);font-size:11px}
 code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
+/* ===== ① 2026-10-03〜 スマホ・iPad・PCどれで開いても見やすい大きさに（画面幅で自動調整） ===== */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+@media (min-width:1700px){ body{font-size:15px} th,td{font-size:14px} .card .v{font-size:24px} }
+@media (max-width:1024px){
+  main{padding:12px}
+  .grid-cards{grid-template-columns:repeat(auto-fill,minmax(130px,1fr))}
+}
+@media (max-width:760px){
+  body{font-size:13px}
+  header{position:static;flex-wrap:wrap;padding:10px 12px;gap:8px}
+  header h1{font-size:16px}
+  header .status{margin-left:0;text-align:left;width:100%}
+  nav{top:0;padding:4px 6px}
+  nav button{padding:8px 10px;font-size:12px}
+  main{padding:10px 8px}
+  .field{min-width:0 !important;flex:1 1 140px}
+  .row{gap:8px}
+  .row > .field input, .row > .field select{width:100%}
+  th,td{padding:6px 7px;font-size:12px}
+  .tablewrap{max-height:70vh;-webkit-overflow-scrolling:touch}
+  .grid-cards{grid-template-columns:repeat(2,1fr);gap:8px}
+  .card .v{font-size:19px}
+  .alertbar{padding:10px 12px}
+  dialog{width:96%}
+  .toolbar .btn{flex:0 0 auto}
+}
 </style>
 </head>
 <body>
@@ -486,7 +512,7 @@ const SEED_SKUS = [
 ];
 /* =================== STATE =================== */
 const LS='shizai_app_v2';
-const APP_VER=20261002.4;   // 画面の版。クラウドに新しい版で保存されていたら、古い画面は自動で読み直す（古い画面が古い計算で上書きしないように）
+const APP_VER=20261003.1;   // 画面の版。クラウドに新しい版で保存されていたら、古い画面は自動で読み直す（古い画面が古い計算で上書きしないように）
 let S=null;
 function skuKey(t,k,i){return t+'|'+k+'|'+i;}
 function bunruiTag(k){

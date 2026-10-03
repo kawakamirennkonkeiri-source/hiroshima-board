@@ -19,8 +19,11 @@
   nav.tabs{ display:flex; gap:4px; padding:10px 20px 0; background:var(--surface-1); border-bottom:1px solid var(--border); overflow-x:auto; -webkit-overflow-scrolling:touch; }
   nav.tabs button{ appearance:none; cursor:pointer; font-family:inherit; font-size:14px; font-weight:800; border:none; background:transparent; color:var(--text-secondary); padding:10px 14px; border-bottom:3px solid transparent; flex:0 0 auto; white-space:nowrap; }
   nav.tabs button.sel{ color:var(--blue-deep); border-bottom-color:var(--blue-deep); }
-  .view{ display:none; padding:18px 22px 40px; max-width:1100px; margin:0 auto; }
+  .view{ display:none; padding:18px 22px 40px; max-width:1280px; margin:0 auto; }
   .view.show{ display:block; }
+  html{ -webkit-text-size-adjust:100%; text-size-adjust:100%; }
+  img, svg, video{ max-width:100%; }
+  .md-modal .box{ max-height:calc(82vh / var(--hb-zoom, 1)) !important; }
 
   /* ===== 大画面モード（舟数モニター用。ヘッダー・タブを隠して数字だけ大きく出す） ===== */
   #fn-kiosk-exit{ display:none; position:fixed; right:14px; top:12px; z-index:9999; appearance:none; cursor:pointer; font-family:inherit; font-size:14px; font-weight:800; border:2px solid var(--blue-deep); background:#fff; color:var(--blue-deep); padding:6px 14px; border-radius:18px; }
@@ -120,7 +123,12 @@
   .nz-summary .s .val small{ font-size:12px; font-weight:700; color:var(--text-secondary); margin-left:2px; }
   .nz-summary .s.done .val{ color:var(--green); }
   .nz-summary .s.pending .val{ color:var(--amber); }
-  .nz-rows{ display:flex; flex-direction:column; gap:10px; }
+  /* 2026-10-03〜 センター電子黒板と同じく、日付ごとの明細を左右2列で行詰め（狭い画面では1列） */
+  .nz-rows{ display:grid; grid-template-columns:1fr 1fr; gap:10px; align-items:start; }
+  @media (max-width:900px){ .nz-rows{ grid-template-columns:1fr; } }
+  .nz-row .qc4 .carry-note{ display:block; font-size:10px; font-weight:800; color:#7a4fc9; margin-top:2px; line-height:1.3; }
+  .nz-row .qc4 .carry-note.out{ color:#b45309; }
+  .nz-status .auto{ font-size:10px; font-weight:700; opacity:.75; margin-left:2px; }
   .nz-row{ background:var(--surface-1); border:1px solid var(--border); border-radius:12px; padding:10px 14px; display:flex; flex-direction:column; gap:8px; }
   .nz-row.is-done{ opacity:.62; }
   .nz-row.is-done .cust{ text-decoration:line-through; text-decoration-color:#9bbf9b; }
@@ -324,6 +332,49 @@
   body.kiosk .fn-cell .cv{ font-size:56px; }
   body.kiosk .fn-wrap{ padding:24px 24px; }
 
+  /* ===== ① 2026-10-03〜 スマホ・iPad・PCどれで開いても見やすい大きさに（画面幅で自動調整） ===== */
+  @media (max-width:1024px){
+    .view{ padding:16px; }
+    .stat-card{ min-width:150px; padding:12px 16px; }
+    .stat-card .val{ font-size:28px; }
+    .fn-cell{ min-width:140px; }
+  }
+  @media (max-width:760px){
+    header{ padding:8px 12px; gap:8px; }
+    header h1{ font-size:16px; }
+    header .status{ margin-left:0; width:100%; }
+    nav.tabs{ padding:4px 8px 0; }
+    nav.tabs button{ font-size:13px; padding:9px 10px; }
+    .card{ padding:12px 12px; border-radius:12px; }
+    .stat-row{ gap:10px; }
+    .stat-card{ min-width:calc(50% - 5px); flex:1 1 calc(50% - 5px); padding:10px 12px; }
+    .stat-card .val{ font-size:24px; }
+    .nz-row{ padding:9px 10px; }
+    .nz-row .nz-r1{ grid-template-columns:22px 1fr 104px; }
+    .nz-row .nz-r1 .nyusu{ grid-column:2; grid-row:2; }
+    .nz-row .cust{ font-size:15px; }
+    .nz-row .qc4{ gap:4px; }
+    .nz-row .qc4 .cs, .nz-row .qc4 input{ font-size:16px; }
+    .nz-status{ font-size:12px; padding:7px 4px; }
+    .nz-summary .s .val{ font-size:20px; }
+    .nz-day-head{ flex-wrap:wrap; row-gap:2px; }
+    .nz-day-head .sub{ margin-left:0; width:100%; }
+    .haichi-skill-tbl, table.progress-tbl{ display:block; overflow-x:auto; -webkit-overflow-scrolling:touch; }
+    .fn-big .fn-num{ font-size:44px; }
+    .fn-cell .cv{ font-size:30px; }
+    .fn-op{ font-size:28px; }
+    .fn-mid .fn-rest b{ font-size:24px; }
+    .hojo-card .fval{ font-size:28px; }
+    .seisan-head .seisan-total{ margin-left:0; }
+  }
+  @media (max-width:420px){
+    .stat-card{ min-width:100%; flex-basis:100%; }
+    .nz-row .qc4 .ql{ font-size:9px; }
+    .nz-row .qc4 .cs, .nz-row .qc4 input{ font-size:15px; }
+    .nz-row .qc4 .qkg{ font-size:11px; }
+    .fn-cell{ min-width:100%; }
+    .fn-op{ width:100%; justify-content:center; }
+  }
   @media (max-width:760px){
     .view{ padding:14px; }
     .seisan-list{ grid-template-columns:1fr; }
@@ -356,15 +407,6 @@
   <div class="card">
     <h3>📋 本日の予測・予定 <span class="tag">発注書・シフトより</span></h3>
     <div class="stat-row" id="main-stats"></div>
-    <div class="nz-qty-bar" id="nz-qty-bar">
-      <span class="nz-qty-lbl">本日の合計数量（終了目標時刻の計算に使用・数量変更）：<b id="nz-qty-now">―</b></span>
-      <button class="nz-btn sub" onclick="nzQtyToggleEdit()">✏️ 変更</button>
-      <span id="nz-qty-edit" style="display:none;gap:6px;align-items:center;">
-        <input id="nz-qty-input" type="number" min="0" step="1" style="width:80px;">
-        <button class="nz-btn sub" onclick="nzQtyApply()">適用</button>
-        <button class="nz-btn sub" onclick="nzQtyClear()">既定に戻す</button>
-      </span>
-    </div>
   </div>
 
   <div class="card">
@@ -410,10 +452,10 @@
     <div id="nz-notice"></div>
     <div class="nz-daynav">
       <button class="nz-btn sub" onclick="nzExtendDay()">＋1日</button>
-      <button class="nz-btn sub" onclick="nzResetDays()">3日に戻す</button>
+      <button class="nz-btn sub" onclick="nzResetDays()">7日に戻す</button>
       <input type="date" id="nz-jump" class="nz-jump-input">
       <button class="nz-btn sub" onclick="nzJumpDay()">この日を表示</button>
-      <span class="nz-daynav-label">表示中：<b id="nz-days-label">3</b>日間（全PC共通）</span>
+      <span class="nz-daynav-label">表示中：<b id="nz-days-label">7</b>日間（全PC共通）</span>
     </div>
     <div class="nz-summary">
       <div class="s done"><div class="lbl">作成済み</div><div class="val" id="nz-done-count">0<small>件</small></div></div>
@@ -422,7 +464,7 @@
     <div id="nizukuri-days"></div>
     <div class="empty-note" id="nizukuri-empty" style="display:none;">注文はまだ無いようです（発注書シートに該当日の行が見つからない場合も含む）。</div>
   </div>
-  <div class="foot-note">状態のボタンを押すと「未確定→確定→作成済み」の順で切り替わります。累計＝その日より前に作った分の合計（自動・手入力で修正可）／本日＝今日作った分／のこり＝合計−累計−本日。<br>
+  <div class="foot-note">状態は発注書の数字の色で自動判定します（赤＝未確定／黒・青＝確定。「自動」の表示）。ボタンを押すと「未確定→確定→作成済み」の順で手で変えられます（発注書の色が変わると自動に戻ります。作成済みはそのまま）。<br>累計＝今日より前に作った分＋前の注文の余り（「うち繰越」）／本日＝今日作った分／のこり＝合計−累計−本日。同じ取引先・区分・入数の注文で作りすぎた分は、納品日の早い注文から順に自動で振り分けます（注文数が増減しても自動で振り分け直し）。<br>
     表示する日数・指定日は「＋1日」「この日を表示」を押した時点で全PCへ反映されます（30秒ごとに自動で同期）。</div>
 </div>
 
@@ -601,12 +643,23 @@
   }
   setInterval(tickClock, 1000*10); tickClock();
 
+  // ① 2026-10-03〜 大きい画面（大型モニター・テレビ）では全体を自動で拡大する。
+  //   幅1400px以下（ノートPC・iPad・スマホ）は等倍＝CSSの画面幅ごとの調整（@media）だけで合わせる。
+  function hbAutoZoom_(){
+    var w = window.innerWidth || document.documentElement.clientWidth || 0;
+    var z = (w > 1400) ? Math.min(1.6, Math.round(w / 1400 * 20) / 20) : 1;
+    document.body.style.zoom = (z === 1) ? '' : String(z);
+    document.documentElement.style.setProperty('--hb-zoom', String(z));
+  }
+  hbAutoZoom_();
+  window.addEventListener('resize', function(){ clearTimeout(hbAutoZoom_._t); hbAutoZoom_._t = setTimeout(hbAutoZoom_, 150); });
+
   /* ===== 本日荷造りタブ ===== */
   var LAST_MAINSTATS = null, LAST_NIZUKURI = null, LAST_SHIFT = null, LAST_HOJO = null, LAST_SEISAN = null, LAST_PROGRESS_BY_CLIENT = {};
 
   // ⑦-b 表示ウィンドウ（何日分表示・起点日）。センター電子黒板と同じ「デフォ3日・＋1日・指定日ジャンプ」。
   //   本日荷造り状態（注文ごとの状態）とは別物＝GAS側はPropertiesServiceに1個だけ保存し全PC共有する。
-  var NZ_DAYS_WANTED = 3;
+  var NZ_DAYS_WANTED = 7;      // 2026-10-03〜 既定7日（旧3日）
   var NZ_JUMP_DATE = '';        // 'yyyy-MM-dd' or ''（空＝今日起点）
   var NZ_VIEW_DIRTY = false;    // このPCで変更したがまだクラウドへ送り切れていない（cloud→localの上書きをガード）
   var NZ_DAY_ITEMS = [];        // 直近描画分：[{date:'yyyy-MM-dd', data: nizukuriFullの1件}]
@@ -678,7 +731,7 @@
   //   あるときは上書きしない（centerの「dirtyガード」と同じ考え方＝押した直後に他PCの古い値へ戻らないように）。
   function nzApplyCloudView_(v){
     if(!v || NZ_VIEW_DIRTY) return;
-    var dw = Math.max(1, Math.min(14, Number(v.daysWanted) || 3));
+    var dw = Math.max(7, Math.min(14, Number(v.daysWanted) || 7));
     var jd = v.jumpDate || '';
     var changed = (dw !== NZ_DAYS_WANTED) || (jd !== NZ_JUMP_DATE);
     NZ_DAYS_WANTED = dw; NZ_JUMP_DATE = jd;
@@ -698,9 +751,9 @@
     nzPushView_();
     nzLoadDaysNow_(true);
   }
-  // 「3日に戻す」：既定の3日・今日起点に戻す
+  // 「7日に戻す」：既定の7日・今日起点に戻す
   function nzResetDays(){
-    NZ_DAYS_WANTED = 3; NZ_JUMP_DATE = '';
+    NZ_DAYS_WANTED = 7; NZ_JUMP_DATE = '';
     nzUpdateDaysLabel_();
     nzPushView_();
     nzLoadDaysNow_(true);
@@ -772,7 +825,7 @@
       // 出勤人数が0・未取得の時は計算できないだけなので「―」（「厳しい見込み」と誤表示しない）
       var workers = (LAST_SHIFT && !LAST_SHIFT.error) ? Number(LAST_SHIFT.presentCount) || 0 : 0;
       var ft = LAST_NIZUKURI.finishTime || ((LAST_NIZUKURI.targetFunes && workers > 0) ? '本日中は厳しい見込み' : '―');
-      cards.push({ lbl: '終了目標時刻', val: ft, sub: '本日の合計数量 ÷（出勤人数×2舟/時）' });
+      cards.push({ lbl: '終了目標時刻', val: ft, sub: '本日の荷造り舟数 ÷（出勤人数×2舟/時）' });
     }
 
     box.innerHTML = cards.map(renderStatCardHtml_).join('');
@@ -854,14 +907,14 @@
         '<div class="idx">' + (idx + 1) + '</div>' +
         '<div class="cust">' + escHtml_(o.cust) + (o.kubun ? '<span class="bunrui ' + nzBunruiClass_(o.kubun) + '">' + escHtml_(o.kubun) + '</span>' : '') + (isKg ? '<span class="bunrui b-kg">kg</span>' : '') + (o.isNew ? '<span class="new-flag">NEW</span>' : '') + '</div>' +
         '<div class="nyusu">' + (isKg ? '<small>kgで入力</small>' : (o.nyusu ? '入数 ' + escHtml_(String(o.nyusu)) : '<small>入数 —</small>')) + '</div>' +
-        '<button class="nz-status" data-st="' + o.state + '" onclick="nzStateCycle(\'' + escJsAttr_(o.key) + '\')">' + nzStateMark_(o.state) + ' ' + escHtml_(nzStateLabel_(o.state)) + '</button>' +
+        '<button class="nz-status" data-st="' + o.state + '" title="' + escAttr_(nzStateTitle_(o)) + '" onclick="nzStateCycle(\'' + escJsAttr_(o.key) + '\')">' + nzStateMark_(o.state) + ' ' + escHtml_(nzStateLabel_(o.state)) + (o.stateSrc === 'color' ? '<span class="auto">自動</span>' : '') + '</button>' +
       '</div>' +
       '<div class="qc4">' +
         '<div class="qi total"><span class="ql">合計</span><span class="cs">' + escHtml_(String(Math.round(o.qty || 0))) + '<small>' + U + '</small></span><span class="qkg">' + nzKgLine_(o, Math.round(o.qty || 0)) + '</span></div>' +
-        '<div class="qi prev"><span class="ql">累計</span><span class="cs prev-v" title="' + escAttr_(nzPrevTooltipText_(o)) + '">' + escHtml_(String(o.madePrev || 0)) + '<small>' + U + '</small></span><span class="qkg prev-kg">' + nzKgLine_(o, o.madePrev || 0) + '</span><button type="button" class="prev-edit-btn" onclick="nzPrevFixToggle(this)">✎ 直す</button></div>' +
+        '<div class="qi prev"><span class="ql">累計</span><span class="cs prev-v" title="' + escAttr_(nzPrevTooltipText_(o)) + '">' + escHtml_(String(o.madePrev || 0)) + '<small>' + U + '</small></span><span class="qkg prev-kg">' + nzKgLine_(o, o.madePrev || 0) + '</span>' + nzCarryInHtml_(o) + '<button type="button" class="prev-edit-btn" onclick="nzPrevFixToggle(this)">✎ 直す</button></div>' +
         '<div class="qi made"><span class="ql">本日</span><input class="q-made" type="number" min="0" step="1" value="' + (o.madeToday || '') + '" data-key="' + escAttr_(o.key) + '"' +
           ' oninput="nzMadeInput(this)" onchange="nzMadeCommit(this)"><span class="qkg made-kg">' + nzKgLine_(o, o.madeToday || 0) + '</span></div>' +
-        '<div class="qi rest' + (o.rest <= 0 ? ' done' : '') + '"><span class="ql">のこり</span><span class="cs rest-v">' + escHtml_(String(o.rest)) + '<small>' + U + '</small></span><span class="qkg rest-kg">' + nzKgLine_(o, o.rest) + '</span></div>' +
+        '<div class="qi rest' + (o.rest <= 0 ? ' done' : '') + '"><span class="ql">のこり</span><span class="cs rest-v">' + escHtml_(String(o.rest)) + '<small>' + U + '</small></span><span class="qkg rest-kg">' + nzKgLine_(o, o.rest) + '</span><span class="carry-out">' + nzSurplusHtml_(o) + '</span></div>' +
       '</div>' +
       '<div class="prev-fix" style="display:none;">' +
         '<span class="prev-fix-lbl">過去に作った分を直す：</span>' +
@@ -875,7 +928,41 @@
   function nzPrevTooltipText_(o){
     var log = o.prodLog || {}, td = todayStr_();
     var parts = Object.keys(log).filter(function(d){ return d !== td && Number(log[d]) > 0; }).sort().map(function(d){ return d + '：' + log[d]; });
-    return parts.length ? parts.join(' / ') : '内訳なし';
+    var txt = parts.length ? parts.join(' / ') : '内訳なし';
+    if(o.carryIn > 0) txt += '（ほかに前の注文の余りから +' + o.carryIn + '）';
+    return txt;
+  }
+  // ② 繰り越し（2026-10-03〜）：同じ取引先・区分・入数の注文で作りすぎた分は、納品日の早い注文から自動で埋める。
+  //   carryIn＝余りから回ってきた数（累計に含む）／surplus＝この注文に入力したうち注文数を超えた数／
+  //   leftover＝どの注文にも入らない余り（その商品のいちばん先の注文に表示）。計算はGAS側（nzPoolCompute_）。
+  function nzCarryInHtml_(o){
+    return (o.carryIn > 0) ? '<span class="carry-note">うち繰越 +' + escHtml_(String(o.carryIn)) + '</span>' : '';
+  }
+  function nzSurplusHtml_(o){
+    var n = Math.max(Number(o.surplus) || 0, Number(o.leftover) || 0);
+    return (n > 0) ? '<span class="carry-note out">余り ' + escHtml_(String(n)) + ' → 次の注文へ</span>' : '';
+  }
+  // 入力中にその場で「のこり」「余り」を計算し直す（正確な振り分けは保存後の次の読み込みでGASが計算）
+  function nzRecalcRest_(o){
+    var qty = Math.round(o.qty || 0);
+    if(o.pooled){
+      var need = qty - (o.madePrev || 0);
+      o.rest = Math.max(0, need - (o.madeToday || 0));
+      o.surplus = Math.max(0, (o.madeToday || 0) - Math.max(0, need));
+    } else {
+      o.rest = qty - (o.madePrev || 0) - (o.madeToday || 0);
+    }
+  }
+  function nzRefreshSurplus_(row, o){
+    var el = row ? row.querySelector('.carry-out') : null;
+    if(el) el.innerHTML = nzSurplusHtml_(o);
+  }
+  // ⑥ 状態ボタンの説明（発注書の文字色で自動判定しているか、手で変えたか）
+  function nzStateTitle_(o){
+    var c = o.color === 'red' ? '赤（未確定）' : (o.color === 'blue' ? '青（納品済）' : (o.color === 'black' ? '黒（確定）' : ''));
+    if(o.stateSrc === 'color') return '発注書の数字の色＝' + c + 'で自動判定。押すと手で変更できます（発注書の色が変わると自動に戻ります）';
+    if(o.stateSrc === 'manual') return '手で変更した状態' + (c ? '（発注書の色＝' + c + '）' : '') + '。作成済み以外は発注書の色が変わると自動に戻ります';
+    return '押すと「未確定→確定→作成済み」の順で切り替わります';
   }
   function nzYesterdayISO_(){ return nzAddDaysISO_(todayStr_(), -1); }
   // 「累計」欄の✎ボタン：過去の生産日を選んで数量を直接直せるパネルの開閉（センターの`.prev-fix`に相当）
@@ -911,8 +998,9 @@
     nzMarkEdit_();
     o.prodLog[d] = newVal;
     o.madePrev = Math.max(0, (o.madePrev || 0) + delta);
-    o.rest = Math.round(o.qty || 0) - o.madePrev - (o.madeToday || 0);
+    nzRecalcRest_(o);
     var row = amtInp.closest('.nz-row');
+    nzRefreshSurplus_(row, o);
     var prevVal = row ? row.querySelector('.prev-v') : null;
     var restVal = row ? row.querySelector('.rest-v') : null;
     var restLine = row ? row.querySelector('.qi.rest') : null;
@@ -963,8 +1051,9 @@
     nzMarkEdit_();
     o.madeToday = cases;
     o.prodLog = o.prodLog || {}; o.prodLog[todayStr_()] = cases;
-    o.rest = Math.round(o.qty || 0) - (o.madePrev || 0) - cases;
+    nzRecalcRest_(o);
     var row = el.closest('.nz-row');
+    nzRefreshSurplus_(row, o);
     var restLine = row ? row.querySelector('.qi.rest') : null;
     var restVal = row ? row.querySelector('.rest-v') : null;
     if(restLine) restLine.classList.toggle('done', o.rest <= 0);
@@ -998,23 +1087,28 @@
     var o = (item.data.orders || []).filter(function(x){ return x.key === key; })[0];
     if(!o) return;
     o.state = nzStateNext_(o.state);
+    o.stateSrc = 'manual';
     nzMarkEdit_();
     nzRenderDayItems_();
-    nzPushDayState_(item, o.key, o.state);
+    nzPushDayState_(item, o.key, o.state, o.colorState || '');
   }
   // 2026-10-02〜 状態は「押した注文だけ」、数量変更は「数量だけ」を送る差分方式（GAS側でマージ）。
   //   以前は画面に持っている古い一覧で、その日の状態・数量変更を丸ごと上書きしていたため、
   //   別画面・別PCで直前に変えた内容が戻ってしまっていた。
-  var nzDayStateSaveTimers = {}, nzDayStatePatch = {};
-  function nzPushDayState_(item, key, state){
+  //   ⑥ 2026-10-03〜 colorPatch＝押した時点の発注書の色による状態（赤→未確定／黒・青→確定）も一緒に送る。
+  //   GASは「同じ色のあいだだけ手動を優先、色が変わったら色の状態に戻す」（作成済みは常に手動優先）。
+  var nzDayStateSaveTimers = {}, nzDayStatePatch = {}, nzDayColorPatch = {};
+  function nzPushDayState_(item, key, state, colorState){
     var date = item.date;
     nzDayStatePatch[date] = nzDayStatePatch[date] || {};
     nzDayStatePatch[date][key] = state || 'mikettei';
+    nzDayColorPatch[date] = nzDayColorPatch[date] || {};
+    nzDayColorPatch[date][key] = colorState || '';
     if(nzDayStateSaveTimers[date]) clearTimeout(nzDayStateSaveTimers[date]);
     nzDayStateSaveTimers[date] = setTimeout(function(){
-      var patch = nzDayStatePatch[date] || {};
-      delete nzDayStatePatch[date]; delete nzDayStateSaveTimers[date];
-      gasPost_('nizukuriStateSave', { date: date, statusPatch: patch, by: deviceLabel_() }, function(d, err){});
+      var patch = nzDayStatePatch[date] || {}, cpatch = nzDayColorPatch[date] || {};
+      delete nzDayStatePatch[date]; delete nzDayColorPatch[date]; delete nzDayStateSaveTimers[date];
+      gasPost_('nizukuriStateSave', { date: date, statusPatch: patch, colorPatch: cpatch, by: deviceLabel_() }, function(d, err){});
     }, 500);
   }
   // ---- 電子黒板ホームタブ（📊）の「本日の合計数量」バー専用：数量変更（targetOverride）だけを送る ----
@@ -2006,13 +2100,13 @@
   }
   function hojoBump(i, delta){
     var f=HOJO.fields[i]; if(!f) return;
-    f.funes = Math.max(0, (Number(f.funes)||0) + delta);
+    f.funes = Math.max(0, Math.round(((Number(f.funes)||0) + delta) * 2) / 2);   // 2026-10-03〜 0.5舟単位
     hojoDirtyMark_(f.name);
     hojoRender(); hojoPushSave();
   }
   function hojoSetVal(i, val){
     var f=HOJO.fields[i]; if(!f) return;
-    f.funes = Math.max(0, Math.round(Number(val)||0));
+    f.funes = Math.max(0, Math.round((Number(val)||0) * 2) / 2);
     hojoDirtyMark_(f.name);
     hojoRenderTotals(); hojoPushSave();
   }
@@ -2034,8 +2128,8 @@
       return '<div class="hojo-card">'
         + '<div class="top">'+(f.fromDx?'<span class="dx-badge">🔗朝礼</span>':'')+'<span class="nm">'+escHtml_(f.name)+'</span><button class="del" onclick="hojoDelField('+i+')">✕</button></div>'
         + '<div class="fnrow"><span class="fval">'+(Number(f.funes)||0)+'</span><span class="u">舟</span>'
-        + '<input class="fedit" type="number" min="0" step="1" value="'+(Number(f.funes)||0)+'" onchange="hojoSetVal('+i+',this.value)"></div>'
-        + '<div class="btns"><button class="pbtn minus" onclick="hojoBump('+i+',-1)">−1</button><button class="pbtn" onclick="hojoBump('+i+',1)">＋1舟</button><button class="pbtn" onclick="hojoBump('+i+',5)">＋5舟</button></div>'
+        + '<input class="fedit" type="number" min="0" step="0.5" value="'+(Number(f.funes)||0)+'" onchange="hojoSetVal('+i+',this.value)"></div>'
+        + '<div class="btns"><button class="pbtn minus" onclick="hojoBump('+i+',-0.5)">−0.5</button><button class="pbtn" onclick="hojoBump('+i+',0.5)">＋0.5舟</button><button class="pbtn" onclick="hojoBump('+i+',5)">＋5舟</button></div>'
         + '</div>';
     }).join('');
     hojoRenderTotals();

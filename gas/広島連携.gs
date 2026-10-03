@@ -77,6 +77,7 @@ var CFG = {
   // ⑦-b 本日荷造りタブの表示ウィンドウ（何日分・起点日）を全PC共有するためのキー（PropertiesService）
   NZ_VIEW_PROP_KEY: 'NZ_VIEW_STATE',
   NZ_VIEW_MAX_DAYS: 14,
+  NZ_VIEW_MIN_DAYS: 7,    // 2026-10-03〜 本日荷造りは既定7日表示（曽我さん依頼。旧3日）
 
   // ===== ⑫ TODOリスト（2026-09-24追加。センター電子黒板の「センターTODOマスタ」と同じ仕組み） =====
   //   マスタ（A=業務/B=頻度）に行を足すだけで黒板に出る（GAS再デプロイ不要）。
@@ -242,7 +243,7 @@ function getBundleCached_(params){
 function getNizukuriFullDaysCached_(params){
   params = params || {};
   var start = String(params.date || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
-  var key = 'HB_NZD_' + Utilities.formatDate(new Date(), CFG.TZ, 'yyyyMMdd') + '_' + start + '_' + (Number(params.days) || 3);
+  var key = 'HB_NZD2_' + Utilities.formatDate(new Date(), CFG.TZ, 'yyyyMMdd') + '_' + start + '_' + (Number(params.days) || 7);
   return cachedBuild_(key, params, getNizukuriFullDays_);
 }
 
@@ -258,6 +259,11 @@ function refreshBoardCache(){
   var params = { date: Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd') };
   var out = cachedBuild_(bundleCacheKey_(params), { date: params.date, nocache: '1' }, getBundle_);
   try{ getNewsCached_(true); }catch(e){}   // Slackお知らせも一緒に温めておく
+  // 本日荷造りタブ（今日起点・全PC共通の表示日数）も温めておく（2026-10-03・7日表示で素の組み立てが重くなったため）
+  try{
+    var vw = nzViewGet_();
+    if(!vw.jumpDate) getNizukuriFullDaysCached_({ date: params.date, days: vw.daysWanted, nocache: '1' });
+  }catch(e){}
   return out._builtAt;
 }
 // 5分おきのトリガーを設置（重複して作らないよう既存の同名トリガーは消してから作る）
@@ -314,6 +320,8 @@ function doGet(e){
     else if(type === 'bundle')       out = getBundleCached_(e.parameter);          // ⑭ 高速化：CacheService経由（?nocache=1で強制再計算）
     else if(type === 'debug')        out = debugTop_();
     else if(type === 'debugOrder')   out = debugOrder_(e.parameter);
+    else if(type === 'debugColors')  out = debugColors_(e.parameter);   // ⑥ 発注書の数字の文字色→状態の判定結果（診断用）
+    else if(type === 'debugPool')    out = debugPool_(e.parameter);     // ② 繰り越しの振り分け結果（診断用・&cust=で絞り込み）
     else out = { error:'type を progress / funes / progressTestGet / seisanGet / nizukuri / mainStats / shizaiAlerts / shizaiLoad / shizaiMeta / shizaiBackupList / shizaiBackupGet / shizaiUsage / shift / haichiGet / nizukuriFull / nizukuriFullDays / nzViewGet / hojoGet / progressByClient / todoMaster / news / bundle / debug のいずれかで指定してください' };
   }catch(err){
     out = { error: String(err && err.message || err) };
@@ -493,8 +501,47 @@ function openOrderSheetReadOnly_(sheetName){
           return _ORD_MEMO_[sheetName];
         }
       };
+    },
+    // ⑥ 2026-10-03追加：数字の文字色（赤＝未確定／黒＝確定／青＝納品済）を読むだけ（書き込みはしない）。
+    //   r0〜r1は0始まりの行番号。行ごとに '#rrggbb' の配列をメモ化して返す。
+    fontColorRows: function(r0, r1){
+      var memo = _ORD_COLOR_MEMO_[sheetName] = _ORD_COLOR_MEMO_[sheetName] || {};
+      var need = false;
+      for(var r = r0; r <= r1; r++){ if(!memo.hasOwnProperty(r)){ need = true; break; } }
+      if(need && r1 >= r0){
+        var width = sh.getLastColumn();
+        var objs = sh.getRange(r0 + 1, 1, r1 - r0 + 1, width).getFontColorObjects();
+        for(var i = 0; i < objs.length; i++) memo[r0 + i] = objs[i].map(fontColorHex_);
+      }
+      var out = {};
+      for(var r2 = r0; r2 <= r1; r2++) out[r2] = memo[r2] || [];
+      return out;
     }
   };
+}
+var _ORD_COLOR_MEMO_ = {};   // { sheetName: { row: ['#rrggbb', …] } }（発注書スプレッドシートのみ・読み取り）
+var _THEME_MEMO_ = null;
+// 文字色オブジェクト→'#rrggbb'（テーマ色はスプレッドシートのテーマから実際の色に直す。分からなければ''）
+function fontColorHex_(c){
+  try{
+    if(!c) return '';
+    var t = c.getColorType();
+    if(t === SpreadsheetApp.ColorType.RGB) return c.asRgbColor().asHexString();
+    if(t === SpreadsheetApp.ColorType.THEME){
+      if(!_THEME_MEMO_) _THEME_MEMO_ = ssById_(CFG.ORDER_SS_ID).getSpreadsheetTheme();
+      return _THEME_MEMO_.getConcreteColor(c.asThemeColor().getThemeColorType()).asRgbColor().asHexString();
+    }
+  }catch(e){}
+  return '';
+}
+// '#rrggbb' → 'red'（赤系）／'blue'（青系）／'black'（それ以外＝黒・灰色・既定色）
+function nzColorClass_(hex){
+  var m = String(hex || '').match(/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i);
+  if(!m) return 'black';
+  var r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
+  if(r >= 140 && r - g >= 60 && r - b >= 60) return 'red';
+  if(b >= 120 && b - r >= 60 && b - g >= 20) return 'blue';
+  return 'black';
 }
 
 // ============================================================
@@ -623,6 +670,11 @@ function getNizukuriToday_(params){
   var orders = [], totalQty = 0, totalKg = 0;
   if(row >= 0){
     var kgAgg = {}, kgOrder = [];
+    // ⑥ 数字の文字色（params.withColor の時だけ・読み取りのみ）。取れなければ色判定なし＝従来どおり手動
+    var rowColors = null;
+    if(params.withColor){
+      try{ rowColors = sh.fontColorRows(row, row)[row] || null; }catch(e){ rowColors = null; }
+    }
     built.cols.forEach(function(col){
       var qty = Number(v[row][col.c]) || 0;
       if(qty <= 0) return;
@@ -635,6 +687,7 @@ function getNizukuriToday_(params){
       var kg = Math.round(qty * col.nyusu);
       var od = { cust: col.name, kubun: kubun, nyusu: col.nyusu, qty: qty, kg: kg };
       if(col.kojin) od.kojin = true;
+      if(rowColors){ od.color = nzColorClass_(rowColors[col.c]); od.colorHex = rowColors[col.c] || ''; }
       orders.push(od);
       totalQty += qty; totalKg += kg;
     });
@@ -747,6 +800,31 @@ function readMainStatsRow_(dateParam){
 
 // ⑤ 診断用：nizukuriが空になる原因調査（本番運用には使わない）
 //   ?type=debugOrder&date=... → nameRow・検出できた列数・列の中身（先頭20件）・本日行の生データを返す
+// ⑥ 診断用：指定日（省略＝今日）の注文ごとの文字色と判定（赤＝未確定／黒・青＝確定）。読み取りのみ。
+function debugColors_(params){
+  params = params || {};
+  var p = {}; for(var k in params){ p[k] = params[k]; } p.withColor = true;
+  var base = getNizukuriToday_(p);
+  if(base.error) return base;
+  return { date: base.date, rowFound: base.rowFound, orders: base.orders.map(function(o){
+    return { cust: o.cust, kubun: o.kubun, nyusu: o.nyusu, qty: o.qty, colorHex: o.colorHex || '', color: o.color || '' };
+  }) };
+}
+// ② 診断用：繰り越し（余りの振り分け）の計算結果。&cust=取引先名 で絞り込み。読み取りのみ。
+function debugPool_(params){
+  params = params || {};
+  var todayReal = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
+  var pool = nzPoolCompute_(todayReal);
+  var cust = String(params.cust || '').trim();
+  var out = {};
+  Object.keys(pool).sort().forEach(function(k){
+    if(cust && k.split('|')[1].indexOf(cust) < 0) return;
+    var x = pool[k];
+    if(!x.own && !x.carryIn && !x.surplusOut && !x.leftover && k.split('|')[0] < todayReal) return;   // 過去で動きの無い注文は省略
+    out[k] = x;
+  });
+  return { today: todayReal, count: Object.keys(out).length, pool: out };
+}
 function debugOrder_(params){
   params = params || {};
   var sh = openOrderSheetReadOnly_(CFG.ORDER_MAIN_SHEET);
@@ -801,21 +879,24 @@ function nzStateSheet_(){
   if(!sh){ sh = ss.insertSheet(name); sh.appendRow(['日付', '更新日時', '端末', '入力内容(JSON)']); try{ sh.setFrozenRows(1); }catch(e){} }
   return sh;
 }
+var _NZ_STATE_MEMO_ = null;   // 1リクエスト内で「本日荷造り状態」シートを読むのは1回だけ（複数日表示の高速化・2026-10-03）
 function nzStateRead_(date){
-  var sh = nzStateSheet_();
-  var last = sh.getLastRow();
-  if(last < 2) return { status: {}, targetOverride: null };
-  var v = sh.getRange(2, 1, last - 1, 4).getValues();
+  if(!_NZ_STATE_MEMO_){
+    var sh = nzStateSheet_();
+    var last = sh.getLastRow();
+    _NZ_STATE_MEMO_ = (last < 2) ? [] : sh.getRange(2, 1, last - 1, 4).getValues();
+  }
+  var v = _NZ_STATE_MEMO_;
   for(var i = v.length - 1; i >= 0; i--){
     var d0 = v[i][0];
     var dstr = (d0 instanceof Date) ? Utilities.formatDate(d0, CFG.TZ, 'yyyy-MM-dd') : String(d0).trim();
     if(dstr !== date) continue;
     try{
       var p = JSON.parse(v[i][3] || '{}');
-      return { status: p.status || {}, targetOverride: (typeof p.targetOverride === 'number') ? p.targetOverride : null };
-    }catch(e){ return { status: {}, targetOverride: null }; }
+      return { status: p.status || {}, statusColor: p.statusColor || {}, targetOverride: (typeof p.targetOverride === 'number') ? p.targetOverride : null };
+    }catch(e){ return { status: {}, statusColor: {}, targetOverride: null }; }
   }
-  return { status: {}, targetOverride: null };
+  return { status: {}, statusColor: {}, targetOverride: null };
 }
 function nzStateSave_(body){
   body = body || {};
@@ -847,9 +928,21 @@ function nzStateSave_(body){
       payload.targetOverride = (body.targetOverride === null || body.targetOverride === undefined) ? null : (Number(body.targetOverride) || 0);
     } else {
       var sp = (body.statusPatch && typeof body.statusPatch === 'object') ? body.statusPatch : {};
+      // ⑥ 2026-10-03〜 colorPatch:{キー:'mikettei'|'kakutei'}＝押した時点の発注書の文字色による状態。
+      //   手で押した状態は「その色のあいだだけ」有効（発注書の色が変わったら色の状態に戻る）。
+      //   色が取れている注文では「未確定」も手動の選択として残す（黒でも未確定にしておけるように）。
+      var cp = (body.colorPatch && typeof body.colorPatch === 'object') ? body.colorPatch : null;
+      if(!payload.statusColor || typeof payload.statusColor !== 'object') payload.statusColor = {};
       Object.keys(sp).forEach(function(k){
         var st = String(sp[k] || '');
-        if(!st || st === 'mikettei') delete payload.status[k]; else payload.status[k] = st;
+        var col = cp ? String(cp[k] || '') : '';
+        if(col){
+          payload.status[k] = st || 'mikettei';
+          payload.statusColor[k] = col;
+        } else {
+          if(!st || st === 'mikettei') delete payload.status[k]; else payload.status[k] = st;
+          delete payload.statusColor[k];
+        }
       });
       if(body.setTarget){
         payload.targetOverride = (body.targetOverride === null || body.targetOverride === undefined) ? null : (Number(body.targetOverride) || 0);
@@ -864,6 +957,7 @@ function nzStateSave_(body){
     kept.push([date, now, String(body.by || ''), JSON.stringify(payload)]);
     sh.clearContents();
     sh.getRange(1, 1, kept.length, 4).setValues(kept.map(function(r){ var a = r.slice(0, 4); while(a.length < 4) a.push(''); return a; }));
+    _NZ_STATE_MEMO_ = null;
     return { ok:true, date: date, savedAt: now };
   } finally { try{ lock.releaseLock(); }catch(e){} }
 }
@@ -877,20 +971,119 @@ function nzLogSheet_(){
   return sh;
 }
 // 全件読み込み→ {orderKey: {生産日: cases}} のマップ（前日作成(累計)＝本日以外の合計、で使う）
+var _NZ_LOG_MEMO_ = null;   // 1リクエスト内で生産ログを読むのは1回だけ（2026-10-03・複数日表示の高速化）
 function nzLogReadAll_(){
+  if(_NZ_LOG_MEMO_) return _NZ_LOG_MEMO_;
   var sh = nzLogSheet_();
   var last = sh.getLastRow();
   var map = {};
-  if(last < 2) return map;
+  if(last < 2) return (_NZ_LOG_MEMO_ = map);
   var v = sh.getRange(2, 1, last - 1, 7).getValues();
   for(var i = 0; i < v.length; i++){
     var key = String(v[i][0] || ''); if(!key) continue;
-    var prodDate = String(v[i][1] || '');
+    var pd0 = v[i][1];
+    var prodDate = (pd0 instanceof Date) ? Utilities.formatDate(pd0, CFG.TZ, 'yyyy-MM-dd') : String(pd0 || '').trim();
     var cases = Number(v[i][6]) || 0;
     if(!map[key]) map[key] = {};
     map[key][prodDate] = cases;
   }
-  return map;
+  return (_NZ_LOG_MEMO_ = map);
+}
+
+// ---- ② 2026-10-03追加：作りすぎた分の繰り越し（同じ 取引先｜区分｜入数 の次の注文へ自動で回す） ----
+//   曽我さん指定の仕様：
+//     ・同じ商品＝取引先＋区分＋入数が同じ注文（区分が空のkg単位グループは対象外＝従来どおり）
+//     ・これまでの全生産ログが対象
+//     ・作った数は、まず入力した注文自身に充てる（注文数まで）。注文数を超えた「余り」は、
+//       納品日の早い注文から順に自動で埋める（その注文の納品日までに作った分だけ）。
+//       → 注文数が増えれば余りを先の注文から取り戻し（月100→200なら 月103・火0）、
+//         減れば余りが次の注文へ回る（月100→50なら 月50・火53）。毎回計算し直すので保存はしない。
+//     ・どの注文にも入らない余りは、その商品のいちばん先の注文に「余り」として表示する。
+//   発注書は読み取りのみ。生産ログ（DATA_SS_ID）にも書かない（表示上の振り分けだけ）。
+var _NZ_POOL_MEMO_ = null;
+function nzRowYmd_(cell, md){
+  if(cell instanceof Date) return Utilities.formatDate(cell, CFG.TZ, 'yyyy-MM-dd');
+  var fy = orderFiscalStartYear_();
+  var y = (md.m >= 7) ? fy : fy + 1;   // 発注書は7月始まり
+  return y + '-' + pad2_(md.m) + '-' + pad2_(md.d);
+}
+// 発注書「発注書」シート全日付の注文を { '取引先|区分|入数': { 'yyyy-MM-dd': 数量 } } にまとめる（読み取りのみ）
+function nzAllOrdersByGroup_(){
+  var sh = openOrderSheetReadOnly_(CFG.ORDER_MAIN_SHEET);
+  if(!sh) return {};
+  var v = sh.getDataRange().getValues();
+  var nameRow = findOrderNameRow_(v);
+  if(nameRow < 0) return {};
+  var meta = detectDayColAndHeaderRows_(v);
+  var built = buildOrderCols_(v, nameRow);
+  var groups = {}, seen = {};
+  for(var r = Math.max(meta.headerRows, nameRow + 1); r < v.length; r++){
+    var md = cellMonthDay_(v[r][meta.dayCol]); if(!md) continue;
+    var ymd = nzRowYmd_(v[r][meta.dayCol], md);
+    if(seen[ymd]) continue;   // 同じ日付の行が2つあれば最初の行だけ（findRowByDate_と同じ）
+    seen[ymd] = true;
+    built.cols.forEach(function(col){
+      if(col.kgUnit) return;
+      var qty = Math.round(Number(v[r][col.c]) || 0);
+      if(qty <= 0) return;
+      var kubun = col.kubun || built.byName[col.name] || '';
+      var g = col.name + '|' + kubun + '|' + col.nyusu;
+      groups[g] = groups[g] || {};
+      groups[g][ymd] = (groups[g][ymd] || 0) + qty;
+    });
+  }
+  return groups;
+}
+// 戻り値：{ 注文キー: { own:自分の分として使った数, ownToday:そのうち今日作った分, carryIn:余りから回ってきた数,
+//                      surplusOut:自分の入力のうち他の注文へ回った/余った数, leftover:どこにも入らない余り（先頭の注文のみ） } }
+function nzPoolCompute_(todayReal){
+  if(_NZ_POOL_MEMO_) return _NZ_POOL_MEMO_;
+  var logMap = nzLogReadAll_();
+  var groups = nzAllOrdersByGroup_();
+  var lotsBy = {};   // g -> [{prod, src, left}]
+  Object.keys(logMap).forEach(function(k){
+    var p = k.split('|'); if(p.length < 4) return;
+    if(!p[2]) return;   // 区分が空＝kg単位グループは対象外
+    var g = p.slice(1).join('|');
+    var lm = logMap[k] || {};
+    Object.keys(lm).forEach(function(pd){
+      var c = Math.round(Number(lm[pd]) || 0); if(c <= 0 || !pd) return;
+      (lotsBy[g] = lotsBy[g] || []).push({ prod: pd, src: k, ddate: p[0], left: c });
+    });
+  });
+  var res = {};
+  var allG = {}; Object.keys(groups).forEach(function(g){ allG[g] = 1; }); Object.keys(lotsBy).forEach(function(g){ allG[g] = 1; });
+  Object.keys(allG).forEach(function(g){
+    var od = groups[g] || {};
+    var dates = Object.keys(od).sort();
+    var lots = (lotsBy[g] || []).sort(function(a, b){ return a.prod < b.prod ? -1 : a.prod > b.prod ? 1 : (a.ddate < b.ddate ? -1 : a.ddate > b.ddate ? 1 : 0); });
+    var info = {};
+    dates.forEach(function(d){ info[d + '|' + g] = { qty: od[d], own: 0, ownToday: 0, carryIn: 0, surplusOut: 0, leftover: 0 }; });
+    // 1) 自分の注文に入力した分を、まず自分に充てる（古い生産日から・注文数まで）
+    lots.forEach(function(l){
+      var o = info[l.src]; if(!o) return;   // 注文が発注書から消えた/日付が変わった＝全部が余り
+      var take = Math.min(l.left, o.qty - o.own); if(take <= 0) return;
+      o.own += take; l.left -= take;
+      if(l.prod === todayReal) o.ownToday += take;
+    });
+    lots.forEach(function(l){ if(l.left > 0 && info[l.src]) info[l.src].surplusOut += l.left; });
+    // 2) 余りを納品日の早い注文から順に埋める（その注文の納品日までに作った分だけ）
+    dates.forEach(function(d){
+      var o = info[d + '|' + g];
+      var need = o.qty - o.own; if(need <= 0) return;
+      for(var i = 0; i < lots.length && need > 0; i++){
+        var l = lots[i];
+        if(l.left <= 0 || l.prod > d) continue;
+        var take = Math.min(l.left, need);
+        l.left -= take; need -= take; o.carryIn += take;
+      }
+    });
+    // 3) どこにも入らなかった余り → この商品のいちばん先（納品日が最後）の注文に表示
+    var rest = 0; lots.forEach(function(l){ rest += l.left; });
+    if(rest > 0 && dates.length) info[dates[dates.length - 1] + '|' + g].leftover = rest;
+    Object.keys(info).forEach(function(k){ res[k] = info[k]; });
+  });
+  return (_NZ_POOL_MEMO_ = res);
 }
 // ---- 🔧 一時的な移行用（2026-09-22・一度だけApps Scriptエディタから▶実行する）----
 //   複数日表示を追加した直後、「本日作った分」の生産日を注文の納品日のまま保存してしまう不具合が
@@ -954,6 +1147,7 @@ function nzMadeSave_(body){
     else{ sh.appendRow(row); found = sh.getLastRow(); }
     // 生産日・納品日は文字列固定で保存（Date型化によるTZずれで前日に見える事故を防ぐ）
     sh.getRange(found, 2, 1, 2).setNumberFormat('@').setValues([[prodDate, ddate]]);
+    _NZ_LOG_MEMO_ = null; _NZ_POOL_MEMO_ = null;
     return { ok:true, key: key, prodDate: prodDate, savedAt: now };
   } finally { try{ lock.releaseLock(); }catch(e){} }
 }
@@ -991,10 +1185,13 @@ function nzSnapSheet_(){
   if(!sh){ sh = ss.insertSheet(name); sh.appendRow(['キー', '数量', '検知日時', '取引先区分']); try{ sh.setFrozenRows(1); }catch(e){} firstEver = true; }
   return { sh: sh, firstEver: firstEver };
 }
-function nzMarkNew_(date, orders){
+// 2026-10-03〜 複数日表示（7日）で毎日ぶん読み書きしないよう、1リクエスト内は読み込み1回・書き込み1回にまとめる
+//   （nzMarkNew_ で印を付け、getNizukuriFull_／getNizukuriFullDays_ の最後に nzSnapFlush_ で1回だけ保存）。
+var _NZ_SNAP_MEMO_ = null;   // { sh, firstEver, snap, dirty }
+function nzSnapLoad_(){
+  if(_NZ_SNAP_MEMO_) return _NZ_SNAP_MEMO_;
   var t = nzSnapSheet_(), sh = t.sh;
   var data = sh.getDataRange().getValues();
-  var firstEver = t.firstEver || data.length <= 1;
   var snap = {};
   for(var i = 1; i < data.length; i++){
     var k = String(data[i][0] || ''); if(!k) continue;
@@ -1002,6 +1199,11 @@ function nzMarkNew_(date, orders){
     var caMs = (ca instanceof Date) ? ca.getTime() : (ca ? Date.parse(ca) : 0);
     snap[k] = { qty: Number(data[i][1]) || 0, changedAt: caMs || 0, memo: String(data[i][3] || '') };
   }
+  _NZ_SNAP_MEMO_ = { sh: sh, firstEver: t.firstEver || data.length <= 1, snap: snap, dirty: false };
+  return _NZ_SNAP_MEMO_;
+}
+function nzMarkNew_(date, orders){
+  var m = nzSnapLoad_(), snap = m.snap, firstEver = m.firstEver;
   var now = Date.now();
   var newWindowMs = 12 * 60 * 60 * 1000;
   orders.forEach(function(o){
@@ -1011,19 +1213,29 @@ function nzMarkNew_(date, orders){
     else if(!prev){ changedAt = now; }
     else if(prev.qty !== (o.qty || 0)){ changedAt = now; }
     else{ changedAt = prev.changedAt || 0; }
-    snap[key] = { qty: o.qty || 0, changedAt: changedAt, memo: o.cust + (o.kubun ? '(' + o.kubun + ')' : '') };
+    var memo = o.cust + (o.kubun ? '(' + o.kubun + ')' : '');
+    if(!prev || prev.qty !== (o.qty || 0) || prev.changedAt !== changedAt) m.dirty = true;
+    snap[key] = { qty: o.qty || 0, changedAt: changedAt, memo: memo };
     o.isNew = !!(changedAt && (now - changedAt) < newWindowMs);
   });
+}
+function nzSnapFlush_(){
+  var m = _NZ_SNAP_MEMO_;
+  if(!m) return;
+  var now = Date.now();
   var cutoffMs = now - (CFG.NZ_SNAP_KEEP_DAYS || 7) * 24 * 60 * 60 * 1000;
-  var out = [['キー', '数量', '検知日時', '取引先区分']];
-  Object.keys(snap).forEach(function(k){
+  var out = [['キー', '数量', '検知日時', '取引先区分']], dropped = false;
+  Object.keys(m.snap).forEach(function(k){
     var dms = Date.parse(k.split('|')[0]);
-    if(dms && dms < cutoffMs) return;   // 古いスナップショットは保存のたびに間引く
-    var s = snap[k];
+    if(dms && dms < cutoffMs){ dropped = true; return; }   // 古いスナップショットは保存のたびに間引く
+    var s = m.snap[k];
     out.push([k, s.qty, s.changedAt ? new Date(s.changedAt).toISOString() : '', s.memo]);
   });
-  sh.clearContents();
-  sh.getRange(1, 1, out.length, 4).setValues(out);
+  if(m.dirty || dropped || m.firstEver){
+    m.sh.clearContents();
+    m.sh.getRange(1, 1, out.length, 4).setValues(out);
+  }
+  _NZ_SNAP_MEMO_ = null;
 }
 
 // ---- 実績計算：終了目標時刻（総舟数÷(人数×2舟/時)を開始7:00・休憩4本を除いて計算） ----
@@ -1055,7 +1267,8 @@ function nzCalcFinish_(totalFunes, workerCount){
 // ---- ⑦ まとめ取得：状態・生産ログ・NEW判定・実績計算つきの本日荷造り（読み取りのみ） ----
 function getNizukuriFull_(params){
   params = params || {};
-  var base = getNizukuriToday_(params);
+  var bp = {}; for(var pk in params){ bp[pk] = params[pk]; } bp.withColor = true;   // ⑥ 文字色も読む
+  var base = getNizukuriToday_(bp);
   if(base.error) return base;
   var date = base.date;   // クエリした注文行の納品日（複数日表示では今日以外の日もありうる）
   // ⚠「本日作った分」の判定基準は常に実際のカレンダー上の今日＝todayReal（生産日）。納品日dateとは
@@ -1065,26 +1278,55 @@ function getNizukuriFull_(params){
   var todayReal = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
   var state = nzStateRead_(date);
   var logMap = nzLogReadAll_();
+  var pool = {};
+  try{ pool = nzPoolCompute_(todayReal); }catch(e){ pool = {}; }
 
   var orders = base.orders.map(function(o){
     var key = nzOrderKey_(date, o);
     var log = logMap[key] || {};
     // 個人注文の自動記入（nzAutoMadeKojin_）は2026-09-29に停止（曽我さん依頼）：
     //   発注書の入力日と実際に作った日がずれるため、他の注文と同じく「本日」欄を手入力する運用に戻した。
-    var madeToday = Number(log[todayReal]) || 0;
+    var madeToday = Number(log[todayReal]) || 0;   // 本日欄＝この注文に今日入力した数（そのまま）
     var madeTotal = 0; Object.keys(log).forEach(function(d){ madeTotal += Number(log[d]) || 0; });
-    var madePrev = madeTotal - madeToday;
     var totalQty = Math.round(o.qty || 0);
+    var madePrev, rest, carryIn = 0, surplus = 0, pooled = false;
+    var pi = pool[key];
+    if(pi && pi.qty === totalQty){
+      // ② 繰り越しあり：累計＝自分に充てた分（今日の入力ぶんを除く）＋余りから回ってきた分
+      pooled = true;
+      carryIn = pi.carryIn;
+      madePrev = pi.own - pi.ownToday + pi.carryIn;
+      rest = Math.max(0, totalQty - pi.own - pi.carryIn);
+      surplus = pi.surplusOut;   // 自分の入力のうち注文数を超えた分（次の注文へ回る）
+    } else {
+      madePrev = madeTotal - madeToday;
+      rest = totalQty - madePrev - madeToday;
+    }
+    // ⑥ 状態：発注書の文字色（赤＝未確定／黒・青＝確定）で自動判定。手で押した状態は、押した時と
+    //   同じ色のあいだだけ優先。「作成済み」は手で付けたものを常に優先。
+    var colorState = o.color ? (o.color === 'red' ? 'mikettei' : 'kakutei') : '';
+    var manual = state.status[key] || '', manualColor = (state.statusColor || {})[key] || '';
+    var st, stSrc;
+    if(manual === 'sakusei'){ st = 'sakusei'; stSrc = 'manual'; }
+    else if(manual && (!colorState || manualColor === colorState)){ st = manual; stSrc = 'manual'; }
+    else if(colorState){ st = colorState; stSrc = 'color'; }
+    else { st = manual || 'mikettei'; stSrc = manual ? 'manual' : ''; }
     return {
       cust: o.cust, kubun: o.kubun, nyusu: o.nyusu, qty: o.qty, kg: o.kg, unit: o.unit,
-      key: key, state: state.status[key] || 'mikettei',
+      key: key, state: st, stateSrc: stSrc, color: o.color || '', colorState: colorState,
       kojin: !!o.kojin,
-      madePrev: madePrev, madeToday: madeToday, rest: totalQty - madePrev - madeToday,
+      madePrev: madePrev, madeToday: madeToday, rest: rest,
+      pooled: pooled, carryIn: carryIn, surplus: surplus, leftover: pooled ? pi.leftover : 0,
       prodLog: log,   // 生産日ごとの内訳（累計修正UIのツールチップ・日付選択時のプリフィルに使用。読み取りのみ）
       isCS: !!(o.kubun && CFG.NZ_CS_KUBUN_RE.test(o.kubun))
     };
   });
   nzMarkNew_(date, orders);   // 各要素にisNewを付与（発注書側は一切変更しない）
+  if(!params._noFlush) nzSnapFlush_();
+  if(params.ordersOnly){
+    // 複数日表示用：注文一覧だけ（実績・舟数・終了時刻は電子黒板ホームの bundle 側で今日ぶんだけ計算する）
+    return { sheet: base.sheet, date: date, rowFound: base.rowFound, orders: orders, totalQty: base.totalQty, totalKg: base.totalKg };
+  }
 
   // 本日作った分の実績（その他サンプル＝kg単位グループは、センターと同じ理由で対象外）
   //   ⚠ 納品日がこの日の注文だけでなく、生産ログ全体から「生産日=todayReal」の行を合計する
@@ -1141,7 +1383,8 @@ function getNizukuriFull_(params){
   var baseNizukuriFune = (msFull && msFull.nizukuriFunesBase != null) ? msFull.nizukuriFunesBase
     : ((mstats['荷造り舟数'] != null && mstats['荷造り舟数'] !== '') ? (Number(mstats['荷造り舟数']) || 0) : 0);
   var defaultTargetFunes = baseNizukuriFune + seisanFunes;
-  var targetFunes = (state.targetOverride != null) ? state.targetOverride : defaultTargetFunes;
+  // 2026-10-03〜 「本日の合計数量 変更」ボタンを廃止（曽我さん依頼）＝過去に保存された上書きが残っていても使わない。
+  var targetFunes = defaultTargetFunes;
   var presentCount = 0;
   try{ var sh2 = getHiroshimaShiftToday_(params); if(sh2 && !sh2.error) presentCount = sh2.presentCount; }catch(e){}
   var finishTime = nzCalcFinish_(targetFunes, presentCount);
@@ -1149,7 +1392,7 @@ function getNizukuriFull_(params){
   return {
     sheet: base.sheet, date: date, rowFound: base.rowFound,
     orders: orders, totalQty: base.totalQty, totalKg: base.totalKg,
-    targetOverride: state.targetOverride, targetFunes: targetFunes,
+    targetOverride: null, targetFunes: targetFunes,
     madeAllKg: allKg, madeCsKg: csKg, totalFunes: totalFunes,
     budomari: budomari, kakouRitsu: kakouRitsu, finishTime: finishTime
   };
@@ -1162,21 +1405,21 @@ function getNizukuriFull_(params){
 function nzViewGet_(){
   try{
     var raw = PropertiesService.getScriptProperties().getProperty(CFG.NZ_VIEW_PROP_KEY || 'NZ_VIEW_STATE');
-    if(!raw) return { daysWanted: 3, jumpDate: '', updatedAt: '', by: '' };
+    if(!raw) return { daysWanted: CFG.NZ_VIEW_MIN_DAYS || 7, jumpDate: '', updatedAt: '', by: '' };
     var p = JSON.parse(raw);
     return {
-      daysWanted: Math.max(1, Math.min(CFG.NZ_VIEW_MAX_DAYS || 14, Number(p.daysWanted) || 3)),
+      daysWanted: Math.max(CFG.NZ_VIEW_MIN_DAYS || 7, Math.min(CFG.NZ_VIEW_MAX_DAYS || 14, Number(p.daysWanted) || 7)),
       jumpDate: String(p.jumpDate || ''),
       updatedAt: String(p.updatedAt || ''),
       by: String(p.by || '')
     };
-  }catch(e){ return { daysWanted: 3, jumpDate: '', updatedAt: '', by: '' }; }
+  }catch(e){ return { daysWanted: CFG.NZ_VIEW_MIN_DAYS || 7, jumpDate: '', updatedAt: '', by: '' }; }
 }
 function nzViewSave_(body){
   body = body || {};
   var now = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd HH:mm:ss');
   var payload = {
-    daysWanted: Math.max(1, Math.min(CFG.NZ_VIEW_MAX_DAYS || 14, Number(body.daysWanted) || 3)),
+    daysWanted: Math.max(CFG.NZ_VIEW_MIN_DAYS || 7, Math.min(CFG.NZ_VIEW_MAX_DAYS || 14, Number(body.daysWanted) || 7)),
     jumpDate: String(body.jumpDate || '').trim(),
     updatedAt: now,
     by: String(body.by || '')
@@ -1190,17 +1433,32 @@ function nzViewSave_(body){
 //      配置図/生産者タブと同様、本日荷造りタブを開いている時だけフロントから呼ぶ（bundleには含めない）。
 function getNizukuriFullDays_(params){
   params = params || {};
-  var daysWanted = Math.max(1, Math.min(CFG.NZ_VIEW_MAX_DAYS || 14, Number(params.days) || 3));
+  var daysWanted = Math.max(1, Math.min(CFG.NZ_VIEW_MAX_DAYS || 14, Number(params.days) || 7));
   var startStr = String(params.date || '').trim() || Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
   var p = startStr.split('-').map(Number);
   var start = (p.length === 3 && p[0] && p[1] && p[2]) ? new Date(p[0], p[1] - 1, p[2]) : new Date();
-  var days = [];
+  var isos = [];
   for(var i = 0; i < daysWanted; i++){
     var d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
-    var dISO = Utilities.formatDate(d, CFG.TZ, 'yyyy-MM-dd');
-    var dayParams = {}; for(var k in params){ dayParams[k] = params[k]; } dayParams.date = dISO;
-    days.push(getNizukuriFull_(dayParams));
+    isos.push(Utilities.formatDate(d, CFG.TZ, 'yyyy-MM-dd'));
   }
+  // ⑥ 表示する日の行の文字色をまとめて1回で読む（1日ずつ読むと7日分で遅くなるため。読み取りのみ）
+  try{
+    var sh = openOrderSheetReadOnly_(CFG.ORDER_MAIN_SHEET);
+    if(sh){
+      var v = sh.getDataRange().getValues();
+      var meta = detectDayColAndHeaderRows_(v);
+      var rows = isos.map(function(iso){ return findRowByDate_(v, meta.dayCol, iso); }).filter(function(r){ return r >= 0; });
+      if(rows.length) sh.fontColorRows(Math.min.apply(null, rows), Math.max.apply(null, rows));
+    }
+  }catch(e){}
+  // 2026-10-03〜 各日は注文一覧だけ（ordersOnly）・NEW判定の保存は最後に1回だけ（_noFlush）
+  var days = isos.map(function(dISO){
+    var dayParams = {}; for(var k in params){ dayParams[k] = params[k]; }
+    dayParams.date = dISO; dayParams.ordersOnly = true; dayParams._noFlush = true;
+    return getNizukuriFull_(dayParams);
+  });
+  try{ nzSnapFlush_(); }catch(e){}
   return { days: days, daysWanted: daysWanted, startDate: startStr };
 }
 
@@ -1529,7 +1787,7 @@ function hojoSave_(body){
     fields.forEach(function(f){
       var name = String(f.name || '').trim(); if(!name) return;
       if(onlyKeys && !onlyKeys[name]) return;
-      var funes = Math.max(0, Math.round(Number(f.funes) || 0));
+      var funes = Math.max(0, Math.round((Number(f.funes) || 0) * 2) / 2);   // 2026-10-03〜 0.5舟単位
       kept.push([date, name, funes, now]);
       rowsN++;
     });
@@ -2280,6 +2538,7 @@ function haichiSave_(body){
     kept.push([date, now, String(body.by || ''), JSON.stringify(payload)]);
     sh.clearContents();
     sh.getRange(1, 1, kept.length, 4).setValues(kept.map(function(r){ var a = r.slice(0, 4); while(a.length < 4) a.push(''); return a; }));
+    _NZ_STATE_MEMO_ = null;
     return { ok:true, date: date, savedAt: now };
   } finally { try{ lock.releaseLock(); }catch(e){} }
 }
