@@ -536,7 +536,11 @@ function fontColorHex_(c){
 }
 // '#rrggbb' → 'red'（赤系）／'blue'（青系）／'black'（それ以外＝黒・灰色・既定色）
 function nzColorClass_(hex){
-  var m = String(hex || '').match(/^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})/i);
+  // ⚠実データでは黒が '#ff000000'（先頭2桁＝不透明度＋RRGGBB の8桁）で返る（2026-10-03 debugColorsで確認）。
+  //   8桁のときは先頭2桁を捨てて RRGGBB として読む（そのまま先頭6桁を読むと黒が赤に化ける）。
+  var s = String(hex || '').replace(/^#/, '');
+  if(/^[0-9a-f]{8}$/i.test(s)) s = s.slice(2);
+  var m = s.match(/^([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i);
   if(!m) return 'black';
   var r = parseInt(m[1], 16), g = parseInt(m[2], 16), b = parseInt(m[3], 16);
   if(r >= 140 && r - g >= 60 && r - b >= 60) return 'red';
