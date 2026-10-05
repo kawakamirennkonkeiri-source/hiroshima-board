@@ -75,7 +75,8 @@ var CFG = {
   // センターの「区分が"C/S"の1トークン」とは表記が違うため広島専用の判定にする。
   //   2026-10-03〜 「CS」「C・S」「CとS」等も対象（曽我さん指示：C・CS・CとSは歩留まりの「本日作った分」に含めない）。
   NZ_CS_KUBUN_RE: /^\s*(C|\d*S|C\s*[・と&＆\/／・]?\s*S)\s*$/i,
-  // ② 繰越在庫（期首）：基準日の「作業前の在庫」（その日に作る前の数）を「累計」の出発点にする（基準日より前の生産ログは使わない・基準日当日の入力は足す）。
+  // ② 繰越在庫（期首）：基準日の「作業が終わった時点の在庫」（その日に作った分も含む）を「累計」の出発点にする（基準日まで〈当日を含む〉の生産ログは使わない）。
+  //   2026-10-05 修正：10/3の行（ハローズ土付き14＝10/2の7＋10/3の7、ハローズ洗い120＝10/3の120）は終了時点の数だったのに、10/3の入力を足して二重になっていた。
   //   基準日を更新する時は「荷造り繰越在庫」シートに新しい基準日の行を足す（いちばん新しい基準日の行だけ使う）。
   NZ_OPEN_SHEET: '荷造り繰越在庫',
   // 2026-10-05〜 初期値（10/3の在庫）はコードから外した：シートを誤って消しても10/3の数字で作り直さない＝見出しだけの空シートを作る。
@@ -1047,7 +1048,7 @@ function nzAllOrdersByGroup_(){
 // 繰越在庫（期首）の読み込み：{ date:'yyyy-MM-dd'（いちばん新しい基準日）, stock:{ '取引先|区分|入数': c/s } }
 //   書き込み先は電子黒板データ（DATA_SS_ID）だけ。発注書には書かない。
 var _NZ_OPEN_MEMO_ = null;
-var NZ_OPEN_HEAD_ = '基準日（この日の作業前の在庫＝その日に作る前の数）';
+var NZ_OPEN_HEAD_ = '基準日（この日の作業が終わった時点の在庫＝その日に作った分も含む）';
 function nzOpeningRead_(){
   if(_NZ_OPEN_MEMO_) return _NZ_OPEN_MEMO_;
   var ss = ssById_(CFG.DATA_SS_ID);
@@ -1058,11 +1059,11 @@ function nzOpeningRead_(){
     try{ sh.setFrozenRows(1); }catch(e){}
   }
   var v = sh.getDataRange().getValues();
-  // 2026-10-05〜 見出し・メモの表現を「作業前の在庫」にそろえる（旧メモ「終了時点」は計算の意味と食い違っていた）
+  // 2026-10-05〜 見出し・メモの表現を「終了時点の在庫」にそろえる（同日午前の版で「作業前」と書き換えてしまったものを戻す）
   if(v.length && String(v[0][0]) !== NZ_OPEN_HEAD_){ sh.getRange(1, 1).setValue(NZ_OPEN_HEAD_); v[0][0] = NZ_OPEN_HEAD_; }
   for(var mi = 1; mi < v.length; mi++){
     var memo = String(v[mi][5] || '');
-    if(memo.indexOf('終了時点') >= 0){ var nm = memo.replace(/終了時点の累計|終了時点の在庫|終了時点/, '作業前の在庫'); sh.getRange(mi + 1, 6).setValue(nm); v[mi][5] = nm; }
+    if(memo.indexOf('作業前') >= 0){ var nm = memo.replace(/作業前の在庫|作業前/, '終了時点の在庫'); sh.getRange(mi + 1, 6).setValue(nm); v[mi][5] = nm; }
   }
   var best = '', byDate = {};
   for(var i = 1; i < v.length; i++){
@@ -1085,10 +1086,11 @@ function nzPoolCompute_(todayReal){
   if(_NZ_POOL_MEMO_) return _NZ_POOL_MEMO_;
   var logMap = nzLogReadAll_();
   var groups = nzAllOrdersByGroup_();
-  // 繰越在庫（期首）：基準日の作業前の在庫を出発点にする（2026-10-03〜）。
-  //   ・基準日より前の生産ログは使わない（在庫の数字に含まれている）。基準日当日に作った分は在庫に足す
+  // 繰越在庫（期首）：基準日の作業が終わった時点の在庫を出発点にする（2026-10-03〜・2026-10-05に「終了時点」へ修正）。
+  //   ・基準日まで（当日を含む）の生産ログは使わない（在庫の数字に含まれている）
   //   ・納品日が基準日までの注文は「済み」扱い（在庫を食わない）
-  //   ・在庫は基準日の生産として、納品日が基準日より後の注文へ早い順に充てる（＝基準日の作業前の在庫）
+  //   ・在庫は基準日の生産として、納品日が基準日より後の注文へ早い順に充てる
+  //   ※基準日は作業が終わった日（昨日以前）にする。今日の日付にすると、今日の入力が在庫に吸われて見えなくなる。
   var open = { date: '', stock: {} };
   try{ open = nzOpeningRead_(); }catch(e){}
   var lotsBy = {};   // g -> [{prod, src, left}]
@@ -1103,10 +1105,9 @@ function nzPoolCompute_(todayReal){
     var lm = logMap[k] || {};
     Object.keys(lm).forEach(function(pd){
       var c = Math.round(Number(lm[pd]) || 0); if(c <= 0 || !pd) return;
-      // 基準日より前の生産は繰越在庫に含まれている。基準日当日に作った分は在庫とは別（2026-10-03曽我さん回答）＝足す。
-      //   ただし基準日までに納品の注文（済み扱い）へ入れた当日分は、その注文で使った分なので余りにしない。
-      if(open.date && pd < open.date) return;
-      if(open.date && pd === open.date && p[0] <= open.date) return;
+      // 基準日まで（当日を含む）の生産は繰越在庫に含まれている＝足さない。
+      //   2026-10-05：以前は基準日当日の入力を足しており、10/3の入力（ハローズ土付き7・洗い120）が在庫と二重になっていた。
+      if(open.date && pd <= open.date) return;
       (lotsBy[g] = lotsBy[g] || []).push({ prod: pd, src: k, ddate: p[0], left: c });
     });
   });
