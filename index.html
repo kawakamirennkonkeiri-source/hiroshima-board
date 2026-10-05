@@ -103,8 +103,6 @@
   table.progress-tbl th{ background:var(--surface-0); color:var(--text-secondary); font-weight:800; font-size:12px; }
   table.progress-tbl td.val{ text-align:right; font-variant-numeric:tabular-nums; font-weight:700; }
   table.progress-tbl tr:last-child td{ border-bottom:none; }
-  .test-row input{ width:90px; font-family:inherit; font-size:15px; text-align:right; padding:6px 8px; border:1px solid var(--grid); border-radius:6px; }
-  .test-row .diff{ font-size:12px; color:var(--muted); margin-left:8px; }
   .save-bar{ display:flex; align-items:center; gap:12px; margin-top:14px; }
   .save-bar button{ appearance:none; cursor:pointer; font-family:inherit; font-size:14px; font-weight:800; border:none; background:var(--blue); color:#fff; padding:10px 20px; border-radius:20px; }
   .save-bar button:active{ transform:scale(0.97); }
@@ -170,7 +168,7 @@
   .nz-row .prev-fix input[type=number]{ width:70px; font-family:inherit; font-size:13px; padding:4px 6px; border:1px solid var(--grid); border-radius:6px; text-align:right; font-variant-numeric:tabular-nums; }
   .nz-row .qc4 .prev .cs{ cursor:help; }
 
-  /* ===== 本日荷造りタブ：日付ナビゲーション（デフォ3日・＋1日・指定日ジャンプ。全PC共有） ===== */
+  /* ===== 本日荷造りタブ：日付ナビゲーション（既定7日・＋1日・指定日ジャンプ。全PC共有） ===== */
   .nz-daynav{ display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:12px; }
   .nz-daynav-label{ font-size:12px; font-weight:700; color:var(--muted); }
   .nz-daynav-label b{ color:var(--blue-deep); font-size:14px; }
@@ -587,7 +585,7 @@
     </div>
     <div class="fn-foot">
       <button class="haichi-btn sub" onclick="fnKiosk(true)">⛶ 大画面モード（ヘッダーとタブを隠す）</button>
-      <span>本日目標舟数＝本日の荷造り舟数（収穫＋前日ｽﾄｯｸ−本日ｽﾄｯｸ＋生産者。数量変更で上書き可）／現在合計舟数＝前日ストック＋圃場＋生産者。前日ストックは数字をタップして直せます（空にすると発注書の値に戻ります）</span>
+      <span>本日目標舟数＝本日の荷造り舟数（収穫＋前日ｽﾄｯｸ−本日ｽﾄｯｸ＋生産者）／現在合計舟数＝前日ストック＋圃場＋生産者。前日ストックは数字をタップして直せます（空にすると発注書の値に戻ります）</span>
       <span class="fn-status" id="fn-status"></span>
     </div>
   </div>
@@ -657,7 +655,7 @@
   /* ===== 本日荷造りタブ ===== */
   var LAST_MAINSTATS = null, LAST_NIZUKURI = null, LAST_SHIFT = null, LAST_HOJO = null, LAST_SEISAN = null, LAST_PROGRESS_BY_CLIENT = {};
 
-  // ⑦-b 表示ウィンドウ（何日分表示・起点日）。センター電子黒板と同じ「デフォ3日・＋1日・指定日ジャンプ」。
+  // ⑦-b 表示ウィンドウ（何日分表示・起点日）。センター電子黒板と同じ「＋1日・指定日ジャンプ」（既定7日）。
   //   本日荷造り状態（注文ごとの状態）とは別物＝GAS側はPropertiesServiceに1個だけ保存し全PC共有する。
   var NZ_DAYS_WANTED = 7;      // 2026-10-03〜 既定7日（旧3日）
   var NZ_JUMP_DATE = '';        // 'yyyy-MM-dd' or ''（空＝今日起点）
@@ -774,8 +772,8 @@
   }
 
   // ①本日の荷造り舟数の既定値＝発注書の荷造り舟数＋生産者タブの収穫舟数合計。
-  //   電子黒板のタイル・本日の合計数量（数量変更の既定に戻す）・終了目標時刻の計算元をこの1つにそろえる。
-  //   発注書の荷造り舟数が未取得の間はnullを返す（既定に戻す操作では0扱いにする）。
+  //   電子黒板のタイル・舟数モニター・終了目標時刻の計算元をこの1つにそろえる。
+  //   発注書の荷造り舟数が未取得の間はnullを返す。
   //   2026-09-29〜 式を変更（曽我さん指定）：
   //     本日の荷造り舟数＝収穫舟数＋前日ｽﾄｯｸ舟数−本日ｽﾄｯｸ舟数＋生産者タブの収穫舟数
   //   発注書側の3項（収穫＋前日ｽﾄｯｸ−本日ｽﾄｯｸ）はGASが nizukuriFunesBase として返す。
@@ -821,7 +819,7 @@
     var planFune = nzDefaultTargetFunes_();
     cards.push({ lbl: '荷造り予定㎏', val: (planFune != null ? Math.round(planFune * 50) : '―'), u: 'kg', sub: '本日の荷造り舟数 × 50kg' });
     if(LAST_NIZUKURI && !LAST_NIZUKURI.error){
-      // ⑦ 終了目標時刻＝本日の合計数量（数量変更で上書き可）÷（出勤人数×2舟/時）
+      // ⑦ 終了目標時刻＝本日の荷造り舟数÷（出勤人数×2舟/時）
       // 出勤人数が0・未取得の時は計算できないだけなので「―」（「厳しい見込み」と誤表示しない）
       var workers = (LAST_SHIFT && !LAST_SHIFT.error) ? Number(LAST_SHIFT.presentCount) || 0 : 0;
       var ft = LAST_NIZUKURI.finishTime || ((LAST_NIZUKURI.targetFunes && workers > 0) ? '本日中は厳しい見込み' : '―');
@@ -832,7 +830,7 @@
   }
 
   // ⑤ 本日の注文一覧（発注書シートより・取引先ごとの数量とkg）
-  // ⑦ 状態(未確定/確定/作成済み)・NEWバッジ・合計/累計/本日/のこりの4段・実績カード・数量変更
+  // ⑦ 状態(未確定/確定/作成済み)・NEWバッジ・合計/累計/本日/のこりの4段・実績カード（数量変更バーは2026-10-03廃止）
   //   センター電子黒板と同じカード行デザイン（nz-row/nz-r1/qc4/nz-status）で描画する。
   function nzStateLabel_(st){ return st === 'kakutei' ? '確定' : (st === 'sakusei' ? '作成済み' : '未確定'); }
   function nzStateNext_(st){ return st === 'mikettei' ? 'kakutei' : (st === 'kakutei' ? 'sakusei' : 'mikettei'); }
@@ -1100,8 +1098,8 @@
     nzRenderDayItems_();
     nzPushDayState_(item, o.key, o.state, o.colorState || '');
   }
-  // 2026-10-02〜 状態は「押した注文だけ」、数量変更は「数量だけ」を送る差分方式（GAS側でマージ）。
-  //   以前は画面に持っている古い一覧で、その日の状態・数量変更を丸ごと上書きしていたため、
+  // 2026-10-02〜 状態は「押した注文だけ」を送る差分方式（GAS側でマージ）。
+  //   以前は画面に持っている古い一覧で、その日の状態を丸ごと上書きしていたため、
   //   別画面・別PCで直前に変えた内容が戻ってしまっていた。
   //   ⑥ 2026-10-03〜 colorPatch＝押した時点の発注書の色による状態（赤→未確定／黒・青→確定）も一緒に送る。
   //   GASは「同じ色のあいだだけ手動を優先、色が変わったら色の状態に戻す」（作成済みは常に手動優先）。
@@ -1118,46 +1116,6 @@
       delete nzDayStatePatch[date]; delete nzDayColorPatch[date]; delete nzDayStateSaveTimers[date];
       gasPost_('nizukuriStateSave', { date: date, statusPatch: patch, colorPatch: cpatch, by: deviceLabel_() }, function(d, err){});
     }, 500);
-  }
-  // ---- 電子黒板ホームタブ（📊）の「本日の合計数量」バー専用：数量変更（targetOverride）だけを送る ----
-  var nzTodayStateSaveTimer = null;
-  function nzPushTodayState_(){
-    if(!LAST_NIZUKURI) return;
-    if(nzTodayStateSaveTimer) clearTimeout(nzTodayStateSaveTimer);
-    nzTodayStateSaveTimer = setTimeout(function(){
-      gasPost_('nizukuriStateSave', {
-        date: LAST_NIZUKURI.date || todayStr_(), setTarget: true,
-        targetOverride: (LAST_NIZUKURI.targetOverride != null ? LAST_NIZUKURI.targetOverride : null),
-        by: deviceLabel_()
-      }, function(d, err){});
-    }, 500);
-  }
-  function nzRenderQtyBar_(data){
-    var now = document.getElementById('nz-qty-now');
-    if(now) now.textContent = (data && data.targetFunes != null) ? String(data.targetFunes) : '―';
-  }
-  function nzQtyToggleEdit(){
-    var box = document.getElementById('nz-qty-edit'); if(!box) return;
-    var show = (box.style.display === 'none' || box.style.display === '');
-    box.style.display = show ? 'flex' : 'none';
-    if(show){ var inp = document.getElementById('nz-qty-input'); if(inp) inp.value = (LAST_NIZUKURI && LAST_NIZUKURI.targetFunes != null) ? LAST_NIZUKURI.targetFunes : ''; }
-  }
-  function nzQtyApply(){
-    if(!LAST_NIZUKURI) return;
-    var inp = document.getElementById('nz-qty-input'); if(!inp) return;
-    var v = Math.max(0, Math.round(Number(inp.value) || 0));
-    LAST_NIZUKURI.targetOverride = v; LAST_NIZUKURI.targetFunes = v;
-    renderMainStats_(); nzRenderQtyBar_(LAST_NIZUKURI); fnRender();
-    document.getElementById('nz-qty-edit').style.display = 'none';
-    nzPushTodayState_();
-  }
-  function nzQtyClear(){
-    if(!LAST_NIZUKURI) return;
-    LAST_NIZUKURI.targetOverride = null;
-    LAST_NIZUKURI.targetFunes = nzDefaultTargetFunes_() || 0;
-    renderMainStats_(); nzRenderQtyBar_(LAST_NIZUKURI); fnRender();
-    document.getElementById('nz-qty-edit').style.display = 'none';
-    nzPushTodayState_();
   }
   function renderJissekiStats_(data){
     var box = document.getElementById('jisseki-stats'); if(!box) return;
@@ -1307,7 +1265,7 @@
         LAST_NIZUKURI = data.nizukuri;
         var dtag = document.getElementById('nizukuri-date'); if(dtag) dtag.textContent = '本日 ' + (data.nizukuri.date || '');
         renderJissekiStats_(LAST_NIZUKURI);
-        nzRenderQtyBar_(LAST_NIZUKURI);
+
       }
       // ⑦-b 他PCで「＋1日」「この日を表示」を押した結果（表示ウィンドウ）をこのPCへ同期。
       //   注文データ自体（重い）は本日荷造りタブを開いている時だけ別途nzLoadDaysNow_で取得する。
@@ -2229,7 +2187,7 @@
   }, 30000);
 
   /* ===== 舟数モニター（もう1台の液晶用。センター電子黒板の簡易版。2026-09-29に前日ストック〈発注書の前日ｽﾄｯｸ舟数・手入力で上書き可〉を追加） =====
-     目標舟数＝本日荷造りの合計数量（数量変更で上書き可）／現在合計舟数＝前日ストック＋圃場（畑）＋生産者。
+     目標舟数＝本日の荷造り舟数（nzDefaultTargetFunes_）／現在合計舟数＝前日ストック＋圃場（畑）＋生産者。
      bundleの30秒ポーリング（loadBundle_）で LAST_HOJO/LAST_SEISAN/LAST_NIZUKURI が更新されるたびに再計算する。 */
   function fnNum_(n){ return Number(n||0).toLocaleString('ja-JP'); }
   function fnRender(){
@@ -2285,11 +2243,11 @@
       if(typeof LAST_MAINSTATS.harvest === 'number'){
         LAST_MAINSTATS.nizukuriFunesBase = LAST_MAINSTATS.harvest + LAST_MAINSTATS.prevStock - (LAST_MAINSTATS.todayStock || 0);
       }
-      if(LAST_NIZUKURI && LAST_NIZUKURI.targetOverride == null){
+      if(LAST_NIZUKURI){
         var dt = nzDefaultTargetFunes_(); if(dt != null) LAST_NIZUKURI.targetFunes = dt;
       }
     }
-    renderMainStats_(); if(LAST_NIZUKURI) nzRenderQtyBar_(LAST_NIZUKURI); fnRender();
+    renderMainStats_(); fnRender();
     _fnPrevPending++;
     gasPost_('prevStockSave', { date: todayStr_(), value: val, by: deviceLabel_() }, function(){
       _fnPrevPending = Math.max(0, _fnPrevPending - 1);

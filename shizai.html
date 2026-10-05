@@ -157,7 +157,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
     <span class="muted" id="usageMeta"></span>
   </div>
   <div class="hint">SKU（取引先×区分×入数）は発注書メインシートから自動取得できます。<b>ﾜﾝﾍﾞｼﾞ・サンプル・合計</b>列は除外。
-  <b>個人注文はkg入力</b>→ サイズで割って箱数に自動換算します。荷造数は「期間内の累計」を入力／取得。</div>
+  荷造数（c/s＝箱数）は「期間内の累計」を入力／取得。</div>
   <div class="tablewrap">
     <table id="usageTable">
       <thead><tr><th class="l">取引先</th><th class="l">区分</th><th>入数kg</th><th>荷造数(累計)</th><th>換算箱数</th><th class="l">消費資材（BOM）</th></tr></thead>
@@ -197,7 +197,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   </div>
   <div class="row">
     <div class="field"><label>棚卸を確認した日</label><input type="date" id="st_date"></div>
-    <div class="field"><label>棚卸をする人（担当者名）<span style="color:var(--danger)">※必須</span></label><input id="st_by" placeholder="例：林田" style="width:150px"></div>
+    <div class="field"><label>棚卸をする人（担当者名）<span style="color:var(--danger)">※必須</span></label><input id="st_by" placeholder="例：白水" style="width:150px"></div>
     <button class="btn" onclick="commitStocktake()">✅ この日の棚卸を確定</button>
     <button class="btn sec" onclick="recheckStocktake()">🔁 棚卸再確認（在庫を今の実数に合わせる）</button>
     <span class="muted" id="st_meta"></span>
@@ -282,7 +282,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 <!-- ============ BOM ============ -->
 <section id="view-bom" class="view">
   <div class="sec-title">商品×資材 BOM（原単位）</div>
-  <div class="hint">「1箱を作るのに、どの資材を何枚使うか」。空欄＝使用なし。個人注文などkg入力のSKUは「換算後の箱数」に対して原単位が掛かります。<br>
+  <div class="hint">「1箱を作るのに、どの資材を何枚使うか」。空欄＝使用なし。<br>
   取引先の一覧は<b>「【広島】発注書2026年度」→「発注書」シートの列</b>と同じ並びです。初期値として<b>「対応する箱 ×1」だけ</b>を入れてあります。
   <b style="color:var(--danger)">ばんじゅう袋（自社箱用）・れんこんシール・ミラマット・片開きシート（トレード用）の原単位は空欄のまま</b>なので、実際の使い方に合わせて入力してください。<br>
   <button class="btn sec small" onclick="bomAutoBox()">📦 一括：各SKUに「箱=1」を仮設定</button>
@@ -512,7 +512,7 @@ const SEED_SKUS = [
 ];
 /* =================== STATE =================== */
 const LS='shizai_app_v2';
-const APP_VER=20261003.1;   // 画面の版。クラウドに新しい版で保存されていたら、古い画面は自動で読み直す（古い画面が古い計算で上書きしないように）
+const APP_VER=20261005.1;   // 画面の版。クラウドに新しい版で保存されていたら、古い画面は自動で読み直す（古い画面が古い計算で上書きしないように）
 let S=null;
 function skuKey(t,k,i){return t+'|'+k+'|'+i;}
 function bunruiTag(k){
@@ -525,7 +525,7 @@ function bunruiTag(k){
 const SEASON={'新旨2kg':['06-01','08-07'],'新旨3.34kg':['06-01','08-07'],'新旨れんこんシール':['06-01','08-07']};
 // 新旨(シーズン初期) ⇄ 旨(通常) の箱・シールの対応。[新旨側, 旨側]
 const SHINUMA_PAIRS=[['新旨2kg','2kg'],['新旨3.34kg','旨3.34kg'],['新旨れんこんシール','旨れんこんシール']];
-// 棚卸2026.9.5（R8/8ｾﾝﾀｰ関係）の消耗品（発注書に直結しない）。初期データに最初から入れる（＝資材マスタの追加ボタンは廃止）
+// 棚卸2026.9.5（R8/8ｾﾝﾀｰ関係）の消耗品（発注書に直結しない）。初期データに最初から入れる（資材マスタの「＋資材を追加」でも追加できる）
 // alertMode: 'threshold'=残数しきい値 / 'periodic'=定期(N日ごと)
 const EXTRA_MATERIALS=[
   {cat:'消耗品',name:'機械用OPPテープ',unit:'個',supplier:'日野出',initStock:7,alertMode:'threshold',thresholdQty:2},
@@ -598,11 +598,6 @@ function migrateV3(){
   S.skus=(S.skus||[]).filter(sk=>sk.kubun&&String(sk.kubun).trim()!=='');
   // ③ 「下茹で」は ﾜﾝﾍﾞｼﾞ扱い（除外＝グレー）
   S.skus.forEach(sk=>{ if(sk.kubun==='下茹で') sk.exc=true; });
-  // ② ピローフィルム資材が無ければ追加（BOMで使えるように・発注書連動）
-  if(!S.materials.some(m=>/ピロー/.test(m.name))){
-    S.materials.push({id:'M'+Date.now()+'_pil',cat:'その他資材',name:'ピローフィルム',unit:'本',supplier:'日野出',
-      leadDays:7,initStock:0,scrapRate:0,minLot:0,seasonStart:'',seasonEnd:'',seasonOff:false,alertMode:'auto'});
-  }
   S.migV3=true;
   try{ localStorage.setItem(LS,JSON.stringify(S)); }catch(e){}
 }
@@ -625,7 +620,7 @@ function migHiroshimaSku(){
   // ④ 資材マスタの仕入先を棚卸表（R8/8ｾﾝﾀｰ関係）に合わせて補完（空欄のものだけ）
   (S.materials||[]).forEach(m=>{ if(!(m.supplier||'').trim() && MATERIAL_SUPPLIERS[m.name]) m.supplier=MATERIAL_SUPPLIERS[m.name]; });
   // ⑤ 広島の発注書に「真空」「ピロー」区分は無いので、どのBOMからも使われていない
-  //    ピローフィルム（migrateV3が熊本流用で足したもの）は在庫が無ければ消す
+  //    ピローフィルム（旧版のmigrateV3が熊本流用で足したもの）は在庫が無ければ消す
   const used={}; for(const k in S.boms){ for(const mid in S.boms[k]) used[mid]=1; }
   S.materials=(S.materials||[]).filter(m=>!(/ピロー/.test(m.name)&&!used[m.id]&&!Number(m.initStock||0)));
   // ⑥ 基準日が熊本の棚卸日（2026-08-03）のままなら、広島の棚卸日（R8/8ｾﾝﾀｰ関係＝2026-09-05）に直す
@@ -1403,12 +1398,6 @@ function seedBoms(materials,skus){
   skus.forEach(sk=>{ if(sk.exc)return; const b=guessBox(sk,materials); if(b){ boms[sk.key]={}; boms[sk.key][b.id]=1; } });
   return boms;
 }
-function bomAutoVac(){
-  const vac=S.materials.find(m=>m.name==='真空袋');if(!vac){alert('真空袋が資材マスタにありません');return;}
-  if(!confirm('真空区分のSKUに「真空袋=1」を仮設定します。よろしいですか？'))return;
-  S.skus.forEach(sk=>{if(!sk.exc&&/真空/.test(sk.kubun)){S.boms[sk.key]=S.boms[sk.key]||{};S.boms[sk.key][vac.id]=1;}});
-  save();renderBom();recalcAll();
-}
 function matByName(n){return S.materials.find(m=>m.name===n);}
 // 新旨⇄旨 の一括切替。dir='toUmai'（新旨→旨）/'toShinuma'（旨→新旨）
 function swapSeason(dir){
@@ -1436,7 +1425,7 @@ function setMatSwitchQty(id,v){const m=matById(id);if(!m)return;
   else { m.switchAfterQty=0; m.switchQtyBase=null; }
   save();recalcAll();renderSwitch();
 }
-// BOM上の from資材の割り当てを to資材へ付け替え（真空区分などの袋の差し替え）
+// BOM上の from資材の割り当てを to資材へ付け替え（袋・箱などの差し替え）
 function switchMaterialBom(fromId,toId){
   let n=0;
   for(const key in S.boms){const bom=S.boms[key];
@@ -1447,31 +1436,12 @@ function switchMaterialBom(fromId,toId){
 function switchToNext(fromId){
   const m=matById(fromId); const to=m&&m.nextMatId?matById(m.nextMatId):null;
   if(!m||!to){ alert('切替先の資材が設定されていません。切替タブ（🔁）で「次に使う資材」を選んでください。'); return; }
-  if(!confirm(m.name+' の使用を「'+to.name+'」へ切り替えます。\n・BOM（真空区分などの袋）を '+to.name+' に付け替え\n・'+m.name+' は「発注しない（使い切り）」のまま残します\nよろしいですか？'))return;
+  if(!confirm(m.name+' の使用を「'+to.name+'」へ切り替えます。\n・BOM上の割り当てを '+to.name+' に付け替え\n・'+m.name+' は「発注しない（使い切り）」のまま残します\nよろしいですか？'))return;
   const n=switchMaterialBom(fromId,to.id);
   m.noReorder=1;   // 旧資材は今後発注しない
   m.switchDate=''; m.switchAfterQty=0; m.switchQtyBase=null;   // 切替条件はリセット（もう切替済み）
   save();recalcAll();renderBom();renderMat();renderSwitch();
   alert(to.name+' に切り替えました（BOM '+n+'件を付け替え）。\n\n'+to.name+' の在庫がまだなら「🔢在庫」で実数を入れてください。');
-}
-// 名前で探す→無ければ作る
-function ensureMaterial(name,cat,unit){
-  let m=matByName(name);
-  if(!m){ m={id:'M'+Date.now()+'_'+Math.floor(Math.random()*1e4),cat:cat||'その他資材',name:name,unit:unit||'枚',supplier:'',
-    leadDays:7,initStock:0,scrapRate:0,minLot:0,seasonStart:'',seasonEnd:'',seasonOff:false,alertMode:'auto'};
-    S.materials.push(m); }
-  return m;
-}
-// 真空袋の切替チェーンをワンクリックで用意：トレード真空袋 →（使い切り）国内用真空袋・無地 → トレード真空袋・無地
-function openSwitchSetup(){
-  if(!confirm('真空袋の切替チェーンを用意します。\n\n① いま使っている真空袋 →（発注しない・使い切り）\n② 国内用真空袋・無地\n③ トレード真空袋・無地（新規）\n\nこの順で切り替わるよう設定します。よろしいですか？'))return;
-  const cur=matByName('トレード真空袋')||matByName('真空袋');
-  const dom=matByName('国内用真空袋・無地')||ensureMaterial('国内用真空袋・無地','その他資材','枚');
-  const tradeMuji=matByName('トレード真空袋・無地')||ensureMaterial('トレード真空袋・無地','その他資材','枚');
-  if(cur){ cur.noReorder=1; cur.nextMatId=dom.id; }
-  dom.nextMatId=tradeMuji.id;
-  save();refreshMatSelects();renderMat();renderBom();renderSwitch();recalcAll();
-  alert('切替チェーンを用意しました。\n\n・各袋の在庫はダッシュボードか切替タブの「🔢在庫」で実数を入力してください。\n・いまの袋を使い切ったら「▶ 今すぐ切替」を押すと、次の袋に自動で付け替わります。'+(cur?'':'\n\n※「トレード真空袋／真空袋」が見つからなかったため、切替元は手動で選んでください。'));
 }
 function renderSwitch(){
   const tb=document.querySelector('#switchTable tbody'); if(!tb)return;

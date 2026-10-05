@@ -624,10 +624,10 @@ function getFunesToday_(params){
 // ============================================================
 var NZ_EXCLUDE_RE = /合計|ワンベジ|カワカミ|生産者|自社|収穫|荷造り|追い送り|ストック|ｽﾄｯｸ|舟数|残数|入力/;
 var NZ_KG_GROUP_RE = /個人注文|その他サンプル/;
-// ② 個人注文（2026-09-29変更）：広島の個人注文は2kg/5kgの列に「箱数(c/s)」で入力され、しかも
-//   入力された時点で既に作ってある（個人販売の受け渡し分）。そこでkg合算グループから外して
-//   普通の注文と同じc/s行として出し、kojin:trueを付けて「本日作った分＝注文数」を自動で埋める
-//   （getNizukuriFull_ の nzAutoMadeKojin_ 参照）。その他サンプルは従来どおりkg合算。
+// ② 個人注文（2026-09-29変更）：広島の個人注文は2kg/5kgの列に「箱数(c/s)」で入力されるため、
+//   kg合算グループから外して
+//   普通の注文と同じc/s行として出し、kojin:trueを付ける（「本日作った分」の自動記入は2026-09-29に停止＝手入力）。
+//   その他サンプルは従来どおりkg合算。
 var NZ_KOJIN_RE = /個人注文/;
 
 // 先頭15行・先頭3列の中から「西暦（2000〜2100）」があるセルを探し、その行を取引先名の行とする
@@ -1154,39 +1154,6 @@ function nzPoolCompute_(todayReal){
   });
   return (_NZ_POOL_MEMO_ = res);
 }
-// ---- 🔧 一時的な移行用（2026-09-22・一度だけApps Scriptエディタから▶実行する）----
-//   複数日表示を追加した直後、「本日作った分」の生産日を注文の納品日のまま保存してしまう不具合が
-//   あった（getNizukuriFull_のtodayReal修正で解消済み）。そのバグ発生中に保存された行は、生産日が
-//   実際のカレンダー上の今日より先（未来）になっているため確実に判別できる＝該当行の生産日を今日に
-//   書き換える。修正後のコードでは生産日が未来になることは無いので、この関数は今後は不要。
-//   ⚠人が手動実行する関数なので末尾にアンダースコアを付けない（付けるとエディタの実行対象一覧に出ない）。
-function fixFutureProdDateArtifacts(){
-  var sh = nzLogSheet_();
-  var last = sh.getLastRow();
-  if(last < 2){ Logger.log('対象行なし'); return; }
-  var todayReal = Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd');
-  var v = sh.getRange(2, 1, last - 1, 9).getValues();
-  var existing = {};
-  for(var i = 0; i < v.length; i++){ existing[String(v[i][0] || '') + '|' + String(v[i][1] || '').trim()] = i + 2; }
-  var fixed = 0, skipped = 0;
-  for(var i = 0; i < v.length; i++){
-    var key = String(v[i][0] || '');
-    var prodDate = String(v[i][1] || '').trim();
-    if(!prodDate || prodDate <= todayReal) continue;
-    var newMapKey = key + '|' + todayReal;
-    if(existing[newMapKey] && existing[newMapKey] !== (i + 2)){
-      Logger.log('要確認（自動修正スキップ）：行' + (i + 2) + ' key=' + key + ' 生産日' + prodDate +
-        '。今日(' + todayReal + ')ぶんの行が既に存在（行' + existing[newMapKey] + '）＝手動で確認・合算してください');
-      skipped++;
-      continue;
-    }
-    sh.getRange(i + 2, 2).setNumberFormat('@').setValue(todayReal);
-    existing[newMapKey] = i + 2;
-    fixed++;
-    Logger.log('修正：行' + (i + 2) + ' key=' + key + ' 生産日 ' + prodDate + ' → ' + todayReal);
-  }
-  Logger.log(fixed + '件を修正、' + skipped + '件は要確認（上記ログ参照）');
-}
 function nzMadeSave_(body){
   body = body || {};
   var lock = LockService.getScriptLock();
@@ -1219,30 +1186,6 @@ function nzMadeSave_(body){
     _NZ_LOG_MEMO_ = null; _NZ_POOL_MEMO_ = null;
     return { ok:true, key: key, prodDate: prodDate, savedAt: now };
   } finally { try{ lock.releaseLock(); }catch(e){} }
-}
-
-// ---- ② 個人注文の「本日作った分」自動記入（2026-09-29追加・同日中に停止＝現在どこからも呼ばれていない） ----
-//   個人注文は発注書に入力された時点で既に作ってある＝他の注文のように黒板で「本日」欄を入れる運用ではない。
-//   生産ログ（DATA_SS_ID内。発注書には書かない）の合計が注文数とずれていたら、差を1日ぶんの行に寄せて合わせる。
-//     ・生産日＝実際の今日（初めて黒板が見つけた日＝入力された日）。ただし納品日が今日より前の注文は納品日
-//       （過去日を表示した時に「今日作った」扱いにしないため）。
-//     ・発注書の数字を後から直した場合も、同じ生産日の行を上書きして合計を注文数にそろえる。
-function nzAutoMadeKojin_(date, o, log, todayReal){
-  var want = Math.max(0, Math.round(Number(o.qty) || 0));
-  var total = 0; Object.keys(log).forEach(function(d){ total += Number(log[d]) || 0; });
-  if(total === want) return log;
-  var prodDate = (date < todayReal) ? date : todayReal;
-  var cur = Number(log[prodDate]) || 0;
-  var next = Math.max(0, cur + (want - total));
-  if(next === cur) return log;
-  try{
-    var res = nzMadeSave_({ date: date, prodDate: prodDate, cust: o.cust, kubun: o.kubun || '', nyusu: o.nyusu || 0,
-                            cases: next, by: '自動（個人注文）' });
-    if(res && res.ok === false) return log;
-  }catch(e){ return log; }
-  var out = {}; Object.keys(log).forEach(function(d){ out[d] = log[d]; });
-  out[prodDate] = next;
-  return out;
 }
 
 // ---- NEW判定（前回スナップショットと比較。初回実行は基準化のみ＝NEW扱いにしない） ----
@@ -1355,7 +1298,7 @@ function getNizukuriFull_(params){
   var orders = base.orders.map(function(o){
     var key = nzOrderKey_(date, o);
     var log = logMap[key] || {};
-    // 個人注文の自動記入（nzAutoMadeKojin_）は2026-09-29に停止（曽我さん依頼）：
+    // 個人注文の自動記入は2026-09-29に停止・関数は2026-10-05に削除（曽我さん依頼）：
     //   発注書の入力日と実際に作った日がずれるため、他の注文と同じく「本日」欄を手入力する運用に戻した。
     var madeToday = Number(log[todayReal]) || 0;   // 本日欄＝この注文に今日入力した数（そのまま）
     var madeTotal = 0; Object.keys(log).forEach(function(d){ madeTotal += Number(log[d]) || 0; });
