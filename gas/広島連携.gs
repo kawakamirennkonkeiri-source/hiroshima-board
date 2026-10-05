@@ -75,15 +75,10 @@ var CFG = {
   // センターの「区分が"C/S"の1トークン」とは表記が違うため広島専用の判定にする。
   //   2026-10-03〜 「CS」「C・S」「CとS」等も対象（曽我さん指示：C・CS・CとSは歩留まりの「本日作った分」に含めない）。
   NZ_CS_KUBUN_RE: /^\s*(C|\d*S|C\s*[・と&＆\/／・]?\s*S)\s*$/i,
-  // ② 繰越在庫（期首）：この基準日の終了時点の在庫を「累計」の出発点にする（それ以前の生産ログは使わない）。
-  //   シートが無ければ下の初期値で自動作成（2026-10-03・曽我さんから10/3の累計の連絡。当日作った分は別＝足す）。以後はシートを直せばよい。
+  // ② 繰越在庫（期首）：基準日の「作業前の在庫」（その日に作る前の数）を「累計」の出発点にする（基準日より前の生産ログは使わない・基準日当日の入力は足す）。
+  //   基準日を更新する時は「荷造り繰越在庫」シートに新しい基準日の行を足す（いちばん新しい基準日の行だけ使う）。
   NZ_OPEN_SHEET: '荷造り繰越在庫',
-  NZ_OPEN_SEED: [
-    ['2026-10-03', 'ハローズ', '土付き', 3.34, 14],
-    ['2026-10-03', 'ハローズ', '洗い',   3.34, 120],
-    ['2026-10-03', '万代',     '洗い',   3.34, 1005],
-    ['2026-10-03', 'マルヨシ', 'Mup',    5,    220]
-  ],
+  // 2026-10-05〜 初期値（10/3の在庫）はコードから外した：シートを誤って消しても10/3の数字で作り直さない＝見出しだけの空シートを作る。
   // ⑦-b 本日荷造りタブの表示ウィンドウ（何日分・起点日）を全PC共有するためのキー（PropertiesService）
   NZ_VIEW_PROP_KEY: 'NZ_VIEW_STATE',
   NZ_VIEW_MAX_DAYS: 14,
@@ -1052,19 +1047,23 @@ function nzAllOrdersByGroup_(){
 // 繰越在庫（期首）の読み込み：{ date:'yyyy-MM-dd'（いちばん新しい基準日）, stock:{ '取引先|区分|入数': c/s } }
 //   書き込み先は電子黒板データ（DATA_SS_ID）だけ。発注書には書かない。
 var _NZ_OPEN_MEMO_ = null;
+var NZ_OPEN_HEAD_ = '基準日（この日の作業前の在庫＝その日に作る前の数）';
 function nzOpeningRead_(){
   if(_NZ_OPEN_MEMO_) return _NZ_OPEN_MEMO_;
   var ss = ssById_(CFG.DATA_SS_ID);
   var sh = ss.getSheetByName(CFG.NZ_OPEN_SHEET);
   if(!sh){
     sh = ss.insertSheet(CFG.NZ_OPEN_SHEET);
-    var rows = [['基準日（この日の作業前の在庫）', '取引先', '区分', '入数', '在庫c/s', 'メモ']];
-    (CFG.NZ_OPEN_SEED || []).forEach(function(r){ rows.push([r[0], r[1], r[2], r[3], r[4], '10/3終了時点の累計（曽我さん連絡）']); });
-    sh.getRange(1, 1, rows.length, 1).setNumberFormat('@');
-    sh.getRange(1, 1, rows.length, 6).setValues(rows);
+    sh.getRange(1, 1, 1, 6).setValues([[NZ_OPEN_HEAD_, '取引先', '区分', '入数', '在庫c/s', 'メモ']]);
     try{ sh.setFrozenRows(1); }catch(e){}
   }
   var v = sh.getDataRange().getValues();
+  // 2026-10-05〜 見出し・メモの表現を「作業前の在庫」にそろえる（旧メモ「終了時点」は計算の意味と食い違っていた）
+  if(v.length && String(v[0][0]) !== NZ_OPEN_HEAD_){ sh.getRange(1, 1).setValue(NZ_OPEN_HEAD_); v[0][0] = NZ_OPEN_HEAD_; }
+  for(var mi = 1; mi < v.length; mi++){
+    var memo = String(v[mi][5] || '');
+    if(memo.indexOf('終了時点') >= 0){ var nm = memo.replace(/終了時点の累計|終了時点の在庫|終了時点/, '作業前の在庫'); sh.getRange(mi + 1, 6).setValue(nm); v[mi][5] = nm; }
+  }
   var best = '', byDate = {};
   for(var i = 1; i < v.length; i++){
     var d0 = v[i][0];
@@ -1086,7 +1085,7 @@ function nzPoolCompute_(todayReal){
   if(_NZ_POOL_MEMO_) return _NZ_POOL_MEMO_;
   var logMap = nzLogReadAll_();
   var groups = nzAllOrdersByGroup_();
-  // 繰越在庫（期首）：基準日の終了時点の在庫を出発点にする（2026-10-03〜）。
+  // 繰越在庫（期首）：基準日の作業前の在庫を出発点にする（2026-10-03〜）。
   //   ・基準日より前の生産ログは使わない（在庫の数字に含まれている）。基準日当日に作った分は在庫に足す
   //   ・納品日が基準日までの注文は「済み」扱い（在庫を食わない）
   //   ・在庫は基準日の生産として、納品日が基準日より後の注文へ早い順に充てる（＝基準日の作業前の在庫）
@@ -1346,7 +1345,10 @@ function getNizukuriFull_(params){
   //   ⚠ 納品日がこの日の注文だけでなく、生産ログ全体から「生産日=todayReal」の行を合計する
   //   （2026-10-01：明日・明後日納品分を今日作った分が歩留まりに入らず、本日の荷造り合計1979.3kgに対し
   //    550kg÷40舟=13.75になっていた。キー＝納品日|取引先|区分|入数。kg単位グループは区分が空なので除外）。
-  var allKg = 0, csKg = 0;
+  // 2026-10-05〜 madeTodayByKey＝同じ集計の「注文キーごとの本日作った分(c/s)」（C・S・kg単位は除く）。
+  //   ホームの一致確認タイル・🔍進捗差分はこれで判定する（以前は本日荷造りタブを開いた時の表示範囲だけを
+  //   見ていたため、起動直後のホームで全取引先が「要確認」になっていた）。
+  var allKg = 0, csKg = 0, madeTodayByKey = {};
   Object.keys(logMap).forEach(function(k){
     var made = Number((logMap[k] || {})[todayReal]) || 0;
     if(!made) return;
@@ -1357,6 +1359,7 @@ function getNizukuriFull_(params){
     // 2026-10-03〜 区分C・S（CS・CとS等）は歩留まりの「本日作った分」に含めない（曽我さん指示）。csKgは加工率の予備計算用に別集計
     if(CFG.NZ_CS_KUBUN_RE.test(kubun)){ csKg += kg; return; }
     allKg += kg;
+    madeTodayByKey[k] = made;
   });
   allKg = Math.round(allKg * 100) / 100; csKg = Math.round(csKg * 100) / 100;
 
@@ -1409,6 +1412,7 @@ function getNizukuriFull_(params){
     orders: orders, totalQty: base.totalQty, totalKg: base.totalKg, openDate: openDate,
     targetOverride: null, targetFunes: targetFunes,
     madeAllKg: allKg, madeCsKg: csKg, totalFunes: totalFunes,
+    madeTodayByKey: madeTodayByKey, madeTodayDate: todayReal,
     budomari: budomari, kakouRitsu: kakouRitsu, finishTime: finishTime
   };
 }

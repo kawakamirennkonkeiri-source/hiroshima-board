@@ -1057,6 +1057,7 @@
     nzMarkEdit_();
     o.madeToday = cases;
     o.prodLog = o.prodLog || {}; o.prodLog[todayStr_()] = cases;
+    if(o.unit !== 'kg' && !o.isCS) NZ_LOCAL_MADE[o.key] = { v: cases, at: Date.now() };   // 一致確認タイル・進捗差分へ即反映
     nzRecalcRest_(o);
     var row = el.closest('.nz-row');
     nzRefreshSurplus_(row, o);
@@ -1066,6 +1067,7 @@
     if(restVal) restVal.innerHTML = escHtml_(String(o.rest)) + '<small>' + (o.unit === 'kg' ? 'kg' : 'c/s') + '</small>';
     nzRefreshRowKg_(row, o);
     nzRefreshDayKg_(item);
+    renderSkuDiff();   // ホームの一致確認タイル・🔍進捗差分もその場で更新
   }
   function nzMadeCommit(el){
     var key = el.getAttribute('data-key');
@@ -1260,12 +1262,11 @@
       if(data.hojo)      LAST_HOJO = data.hojo;
       if(data.seisan)    LAST_SEISAN = data.seisan;
       if(data.progressByClient) LAST_PROGRESS_BY_CLIENT = data.progressByClient.byClient || {};
-      // 電子黒板ホームタブ（📊）の数量バー・実績カードは常に"今日"のデータを使う（表示ウィンドウの影響を受けない）
+      // 電子黒板ホームタブ（📊）の実績カード・一致確認は常に"今日"のデータを使う（表示ウィンドウの影響を受けない）
       if(data.nizukuri){
         LAST_NIZUKURI = data.nizukuri;
         var dtag = document.getElementById('nizukuri-date'); if(dtag) dtag.textContent = '本日 ' + (data.nizukuri.date || '');
         renderJissekiStats_(LAST_NIZUKURI);
-
       }
       // ⑦-b 他PCで「＋1日」「この日を表示」を押した結果（表示ウィンドウ）をこのPCへ同期。
       //   注文データ自体（重い）は本日荷造りタブを開いている時だけ別途nzLoadDaysNow_で取得する。
@@ -1987,7 +1988,35 @@
   // だけを見ていたため、明日以降の注文を前倒しで作った分（本日作った＝実際の生産日は今日）が
   // 反映されなかった（2026-09-22修正・詳細はnzPushMade_のコメント参照）。
   // 区分がC/S（isCS）の注文は、曽我さんの指示により進捗シートとの一致確認の対象から除外する。
+  // 2026-10-05〜 判定元はGASの madeTodayByKey（生産ログ全体から生産日＝今日の分を注文キーごとに集計・C・S/kg単位除く）。
+  //   本日荷造りタブを開いていなくても、表示日数・起点日に関係なく正しく判定できる。
+  //   このPCで入力した直後（GASの集計が追いつくまでの5分間）は、画面上の入力値を優先して重ねる。
+  var NZ_LOCAL_MADE = {};   // key → { v: 本日作った分, at: 入力時刻 }
+  var NZ_LOCAL_MADE_TTL = 5 * 60 * 1000;
   function computeClientDiff_(){
+    var srv = (LAST_NIZUKURI && !LAST_NIZUKURI.error && LAST_NIZUKURI.madeTodayByKey &&
+               LAST_NIZUKURI.madeTodayDate === todayStr_()) ? LAST_NIZUKURI.madeTodayByKey : null;
+    if(srv) return computeClientDiffFromKeys_(srv);
+    return computeClientDiffLegacy_();   // 旧GAS（madeTodayByKeyを返さない）の間は従来どおり
+  }
+  function computeClientDiffFromKeys_(srv){
+    var byKey = {}, k;
+    for(k in srv) byKey[k] = Number(srv[k]) || 0;
+    var now = Date.now();
+    for(k in NZ_LOCAL_MADE){
+      var e = NZ_LOCAL_MADE[k];
+      if(now - e.at > NZ_LOCAL_MADE_TTL || (Number(byKey[k]) || 0) === e.v){ delete NZ_LOCAL_MADE[k]; continue; }
+      byKey[k] = e.v;
+    }
+    var madeByClient = {};
+    for(k in byKey){
+      var made = Number(byKey[k]) || 0; if(!made) continue;
+      var cust = String(k).split('|')[1] || '';
+      madeByClient[cust] = (madeByClient[cust] || 0) + made;
+    }
+    return clientDiffRows_(madeByClient);
+  }
+  function computeClientDiffLegacy_(){
     var madeByClient = {};
     var seenKeys = {};
     NZ_DAY_ITEMS.forEach(function(item){
@@ -2003,6 +2032,9 @@
         madeByClient[o.cust] = (madeByClient[o.cust] || 0) + made;
       });
     });
+    return clientDiffRows_(madeByClient);
+  }
+  function clientDiffRows_(madeByClient){
     var progress = LAST_PROGRESS_BY_CLIENT || {};
     var names = {};
     Object.keys(madeByClient).forEach(function(k){ names[k] = 1; });
