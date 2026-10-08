@@ -126,6 +126,10 @@ var CFG = {
   // 「トリガーの合計実行時間」の1日あたり上限を使い切らないようにするため）
   CACHE_WARM_HOUR_FROM: 5,
   CACHE_WARM_HOUR_TO: 19,
+  // キャッシュ温め1回あたりの持ち時間（秒）。bundleの作り直しだけでこれを超えたら（＝Google側が重い日）、
+  //   Slack・本日荷造り7日分の温めは省いて終える（2026-10-08追加。6分上限で強制終了されるのを防ぐ）。
+  //   普段は全部で約15秒なので、通常日は影響しない。
+  CACHE_WARM_BUDGET_SEC: 60,
 
   MARK_PRESENT: '〇',
   // ⑥-b シフトシートが無い月は「会社休み」シートで出勤を判定（2026-10-01追加）
@@ -262,15 +266,32 @@ function getNizukuriFullDaysCached_(params){
 function refreshBoardCache(){
   var hour = Number(Utilities.formatDate(new Date(), CFG.TZ, 'H'));
   if(hour < CFG.CACHE_WARM_HOUR_FROM || hour >= CFG.CACHE_WARM_HOUR_TO) return 'skip(時間外)';
-  var params = { date: Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd') };
-  var out = cachedBuild_(bundleCacheKey_(params), { date: params.date, nocache: '1' }, getBundle_);
-  try{ getNewsCached_(true); }catch(e){}   // Slackお知らせも一緒に温めておく
-  // 本日荷造りタブ（今日起点・全PC共通の表示日数）も温めておく（2026-10-03・7日表示で素の組み立てが重くなったため）
+  // 2026-10-08 重複実行の防止：Google側が重い日に前の回が5分を超えて動いていると、次の回と重なって
+  //   さらに重くなる（＋1日の合計実行時間を食う）ので、前の回の印が残っていれば何もせず終える。
+  //   ⚠ScriptLockは保存（POST）と共用なので使わない（握ったままだと保存側が待たされる）。
+  //   印は7分で自然に消える＝6分上限で強制終了されて finally が走らなくても、次の次の回からは再開する。
+  var cache = CacheService.getScriptCache();
   try{
-    var vw = nzViewGet_();
-    if(!vw.jumpDate) getNizukuriFullDaysCached_({ date: params.date, days: vw.daysWanted, nocache: '1' });
+    if(cache.get('HB_WARMING')) return 'skip(前回の実行中)';
+    cache.put('HB_WARMING', String(Date.now()), 420);
   }catch(e){}
-  return out._builtAt;
+  var t0 = Date.now();
+  function overBudget(){ return (Date.now() - t0) / 1000 > CFG.CACHE_WARM_BUDGET_SEC; }
+  try{
+    var params = { date: Utilities.formatDate(new Date(), CFG.TZ, 'yyyy-MM-dd') };
+    var out = cachedBuild_(bundleCacheKey_(params), { date: params.date, nocache: '1' }, getBundle_);
+    if(overBudget()) return out._builtAt + '（時間がかかったため残りの温めは省略）';
+    try{ getNewsCached_(true); }catch(e){}   // Slackお知らせも一緒に温めておく
+    if(overBudget()) return out._builtAt + '（時間がかかったため本日荷造りの温めは省略）';
+    // 本日荷造りタブ（今日起点・全PC共通の表示日数）も温めておく（2026-10-03・7日表示で素の組み立てが重くなったため）
+    try{
+      var vw = nzViewGet_();
+      if(!vw.jumpDate) getNizukuriFullDaysCached_({ date: params.date, days: vw.daysWanted, nocache: '1' });
+    }catch(e){}
+    return out._builtAt;
+  }finally{
+    try{ cache.remove('HB_WARMING'); }catch(e){}
+  }
 }
 // 5分おきのトリガーを設置（重複して作らないよう既存の同名トリガーは消してから作る）
 function installBoardCacheTrigger(){
