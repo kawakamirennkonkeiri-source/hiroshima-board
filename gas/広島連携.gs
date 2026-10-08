@@ -644,8 +644,10 @@ var NZ_KG_GROUP_RE = /個人注文|その他サンプル/;
 // ② 個人注文（2026-09-29変更）：広島の個人注文は2kg/5kgの列に「箱数(c/s)」で入力されるため、
 //   kg合算グループから外して
 //   普通の注文と同じc/s行として出し、kojin:trueを付ける（「本日作った分」の自動記入は2026-09-29に停止＝手入力）。
-//   その他サンプルは従来どおりkg合算。
+//   その他サンプルも2026-10-08〜 同じくc/s行（区分Mup/C/S・入数1）として出す（曽我さん指示「サンプルはMup」）。
+//   C・S列は他の注文と同じく isCS＝歩留まり・進捗差分の対象外。旧kg合算時代のログ（区分が空）は nzLogReadAll_ でMupへ読み替える。
 var NZ_KOJIN_RE = /個人注文/;
+var NZ_SAMPLE_RE = /その他サンプル/;
 
 // 先頭15行・先頭3列の中から「西暦（2000〜2100）」があるセルを探し、その行を取引先名の行とする
 function findOrderNameRow_(v){
@@ -672,8 +674,8 @@ function buildOrderCols_(v, nameRow){
     var name = lastName;
     if(!name) continue;
     var isKojin = NZ_KOJIN_RE.test(name);
-    var isKg = !isKojin && NZ_KG_GROUP_RE.test(name);
-    if(!isKg && !isKojin && NZ_EXCLUDE_RE.test(name)) continue;
+    var isKg = false;   // 2026-10-08〜 kg合算グループは無し（個人注文・その他サンプルともc/s行）
+    if(!isKojin && !NZ_SAMPLE_RE.test(name) && NZ_EXCLUDE_RE.test(name)) continue;
     var nyusu = Number(v[nyusuRow] ? v[nyusuRow][c] : NaN);
     if(!(nyusu > 0)) continue;   // 入数が数値の列だけ＝実際の取引先の商品列
     var kubun = normText_(kubunRow < v.length ? v[kubunRow][c] : '');
@@ -1013,6 +1015,8 @@ function nzLogReadAll_(){
   var v = sh.getRange(2, 1, last - 1, 7).getValues();
   for(var i = 0; i < v.length; i++){
     var key = String(v[i][0] || ''); if(!key) continue;
+    // 2026-10-08：その他サンプルがkg合算だった頃のキー（区分が空・入数1）は、Mupのc/s行のキーへ読み替える
+    if(/\|その他サンプル\|\|1$/.test(key)) key = key.replace(/\|\|1$/, '|Mup|1');
     var pd0 = v[i][1];
     var prodDate = (pd0 instanceof Date) ? Utilities.formatDate(pd0, CFG.TZ, 'yyyy-MM-dd') : String(pd0 || '').trim();
     var cases = Number(v[i][6]) || 0;
@@ -1026,7 +1030,8 @@ function nzLogReadAll_(){
 //   曽我さん指定の仕様：
 //     ・同じ商品＝取引先＋区分＋入数が同じ注文（区分が空のkg単位グループは対象外＝従来どおり）
 //     ・これまでの全生産ログが対象
-//     ・作った数は、まず入力した注文自身に充てる（注文数まで）。注文数を超えた「余り」は、
+//     ・（2026-10-08〜）納品日の早い注文から順に、自分への入力＋それまでの余りを生産日の古い順に充てる（先入れ先出し）。
+//       以下は2026-10-03当初の説明：作った数は、まず入力した注文自身に充てる（注文数まで）。注文数を超えた「余り」は、
 //       納品日の早い注文から順に自動で埋める（その注文の納品日までに作った分だけ）。
 //       → 注文数が増えれば余りを先の注文から取り戻し（月100→200なら 月103・火0）、
 //         減れば余りが次の注文へ回る（月100→50なら 月50・火53）。毎回計算し直すので保存はしない。
@@ -1149,18 +1154,47 @@ function nzPoolCompute_(todayReal){
       }
       info[d + '|' + g] = it;
     });
-    // 1) 自分の注文に入力した分を、まず自分に充てる（古い生産日から・注文数まで）
+    // 1) 納品日の早い注文から順に、「自分に入力した分」＋「それまでに出た余り（繰越在庫・前の注文の作りすぎ）」を
+    //    生産日の古い順に充てる（同じ生産日なら自分の入力を先）。
+    //    2026-10-08 修正（曽我さん指摘「個人注文2kgの昨日時点の繰越は12ケース」）：以前は自分の入力を先に全部充てて
+    //    から余りを回していたため、10/8分に今日23入れると、昨日までの余り12のうち7しか10/8分に入らず5が10/10分へ
+    //    飛んでいた。古い在庫から先に使う（先入れ先出し）ようにした。先の注文に入力した分は、その注文の番が来るまで
+    //    使わない（明後日分を今日作っても、明日分に吸われない）。
+    var ownBy = {}, free = [];
     lots.forEach(function(l){
-      var o = info[l.src]; if(!o) return;   // 注文が発注書から消えた/日付が変わった＝全部が余り
-      var take = Math.min(l.left, o.qty - o.own); if(take <= 0) return;
-      o.own += take; l.left -= take;
-      if(l.prod === todayReal) o.ownToday += take;
+      l.orig = l.left;
+      var o = info[l.src];
+      if(o && !o.closed) (ownBy[l.src] = ownBy[l.src] || []).push(l);
+      else free.push(l);   // 注文が発注書から消えた/日付が変わった・済みの注文への入力・繰越在庫＝最初から余り
     });
-    lots.forEach(function(l){ if(l.left > 0 && info[l.src]) info[l.src].surplusOut += l.left; });
-    // 2) 余りを納品日の早い注文から順に埋める（その注文の納品日までに作った分だけ）
+    dates.forEach(function(d){
+      var k = d + '|' + g, o = info[k];
+      var mine = ownBy[k] || [];
+      if(o.closed) return;
+      var cands = mine.concat(free.filter(function(l){ return l.left > 0 && l.prod <= d; }));
+      cands.sort(function(a, b){
+        if(a.prod !== b.prod) return a.prod < b.prod ? -1 : 1;
+        var am = a.src === k ? 0 : 1, bm = b.src === k ? 0 : 1;
+        if(am !== bm) return am - bm;
+        return a.ddate < b.ddate ? -1 : a.ddate > b.ddate ? 1 : 0;
+      });
+      var need = o.qty - o.own;
+      for(var i = 0; i < cands.length && need > 0; i++){
+        var l = cands[i]; if(l.left <= 0) continue;
+        var take = Math.min(l.left, need);
+        l.left -= take; need -= take;
+        if(l.src === k){ o.own += take; if(l.prod === todayReal) o.ownToday += take; }
+        else o.carryIn += take;
+      }
+      mine.forEach(function(l){ if(l.left > 0) free.push(l); });   // 使い切れなかった自分の入力＝余り（次の注文へ）
+    });
+    // surplusOut＝自分に入力した数のうち、自分に充てなかった数（済みの注文は入力が全部余り）
+    lots.forEach(function(l){ var o = info[l.src]; if(o) o.surplusOut += l.orig; });
+    dates.forEach(function(d){ var o = info[d + '|' + g]; if(!o.closed) o.surplusOut = Math.max(0, o.surplusOut - o.own); });
+    // 2) まだ足りない注文（納品日が過ぎて入力が足りない等）へ、残った余りを納品日の早い順に（その注文の納品日までに作った分だけ）
     dates.forEach(function(d){
       var o = info[d + '|' + g];
-      var need = o.qty - o.own; if(need <= 0) return;
+      var need = o.qty - o.own - o.carryIn; if(need <= 0) return;
       for(var i = 0; i < lots.length && need > 0; i++){
         var l = lots[i];
         if(l.left <= 0 || l.prod > d) continue;
@@ -1341,6 +1375,11 @@ function getNizukuriFull_(params){
     //   同じ色のあいだだけ優先。「作成済み」は手で付けたものを常に優先。
     var colorState = o.color ? (o.color === 'red' ? 'mikettei' : 'kakutei') : '';
     var manual = state.status[key] || '', manualColor = (state.statusColor || {})[key] || '';
+    // 2026-10-08：その他サンプルがkg合算だった頃に押した状態（キーの区分が空）も引き継ぐ
+    if(!manual && NZ_SAMPLE_RE.test(o.cust) && o.kubun === 'Mup'){
+      var oldKey = date + '|' + o.cust + '||1';
+      manual = state.status[oldKey] || ''; manualColor = (state.statusColor || {})[oldKey] || '';
+    }
     var st, stSrc;
     if(manual === 'sakusei'){ st = 'sakusei'; stSrc = 'manual'; }
     else if(manual && (!colorState || manualColor === colorState)){ st = manual; stSrc = 'manual'; }
@@ -1363,7 +1402,7 @@ function getNizukuriFull_(params){
     return { sheet: base.sheet, date: date, rowFound: base.rowFound, orders: orders, totalQty: base.totalQty, totalKg: base.totalKg, openDate: openDate };
   }
 
-  // 本日作った分の実績（その他サンプル＝kg単位グループは、センターと同じ理由で対象外）
+  // 本日作った分の実績（2026-10-08〜 その他サンプルもc/s行＝Mupは対象・C/Sは対象外）
   //   ⚠ 納品日がこの日の注文だけでなく、生産ログ全体から「生産日=todayReal」の行を合計する
   //   （2026-10-01：明日・明後日納品分を今日作った分が歩留まりに入らず、本日の荷造り合計1979.3kgに対し
   //    550kg÷40舟=13.75になっていた。キー＝納品日|取引先|区分|入数。kg単位グループは区分が空なので除外）。
