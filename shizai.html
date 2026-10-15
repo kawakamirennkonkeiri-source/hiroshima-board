@@ -518,7 +518,7 @@ const LS='hb_shizai_v1';
 const LS_OLD='shizai_app_v2';
 const ALERTS_LS='hb_shizai_alerts';   // 旧'shizai_alerts'はセンター電子黒板が読むので書かない
 const CENTER_GAS_ID='AKfycbyEzr6jVTWegzY7sChW-axgANWxn9rDcSJV5YPwzhegpUp5z6fh6-O0ISDMZ37LZ8Q';   // センター連携GAS。広島アプリからは絶対につながない
-const APP_VER=20261015.1;   // 画面の版。クラウドに新しい版で保存されていたら、古い画面は自動で読み直す（古い画面が古い計算で上書きしないように）
+const APP_VER=20261015.2;   // 画面の版。クラウドに新しい版で保存されていたら、古い画面は自動で読み直す（古い画面が古い計算で上書きしないように）
 let S=null;
 function skuKey(t,k,i){return t+'|'+k+'|'+i;}
 function bunruiTag(k){
@@ -589,7 +589,13 @@ function loadFromOldKey(){
   const s=defaultState(); s.settings.shareOn=true; s.settings.deviceName=old.settings.deviceName||'';
   return s;
 }
-function load(){ try{S=JSON.parse(localStorage.getItem(LS));}catch(e){} if(!S)S=loadFromOldKey(); if(!S)S=defaultState();
+// 旧版の広島アプリが共用キー'shizai_alerts'に書いた広島のURL・アラートを片付ける
+//   （センター電子黒板がこれを読んで、広島の資材アプリを開いていた）。センターが書いた値は触らない。
+function cleanupSharedAlerts(){
+  try{ const a=JSON.parse(localStorage.getItem('shizai_alerts')||'null');
+    if(a && String(a.appUrl||'').indexOf('hiroshima-board')>=0) localStorage.removeItem('shizai_alerts'); }catch(e){}
+}
+function load(){ cleanupSharedAlerts(); try{S=JSON.parse(localStorage.getItem(LS));}catch(e){} if(!S)S=loadFromOldKey(); if(!S)S=defaultState();
   S.funes=S.funes||{};S.futureFunes=S.futureFunes||{};S.orders=S.orders||[];S.stocktakes=S.stocktakes||[];S.boms=S.boms||{};S.backups=S.backups||[];S.recounts=S.recounts||[];S.scrapLog=S.scrapLog||[];
   S.settings=Object.assign({safetyDays:30,scrapAlertPct:10,shareOn:false,deviceName:''},S.settings);
   S.cloud=Object.assign({rev:0,savedAt:'',savedBy:''},S.cloud);
