@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>センター資材データ 取り出し</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--text:#1f2328;--muted:#5f6b7a;--ok:#137333;--ng:#c5221f;--warn:#b06000;--line:#dde1e6;--accent:#1a73e8}
+body{margin:0;background:var(--bg);color:var(--text);font-family:"Hiragino Sans","Yu Gothic UI","Meiryo",sans-serif;line-height:1.6}
+main{max-width:760px;margin:0 auto;padding:20px 16px 40px}
+h1{font-size:20px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin-bottom:14px}
+.verdict{font-size:18px;font-weight:700}
+.ok{color:var(--ok)}.ng{color:var(--ng)}.warn{color:var(--warn)}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:6px 8px;border-bottom:1px solid var(--line);vertical-align:top}
+th{width:42%;color:var(--muted);font-weight:600}
+button{font:inherit;font-weight:700;padding:10px 18px;border-radius:8px;border:0;background:var(--accent);color:#fff;cursor:pointer}
+button.sec{background:#e8eaed;color:var(--text)}
+ul{margin:6px 0 0;padding-left:20px}
+</style>
+</head>
+<body>
+<main>
+<h1>センター資材データ 取り出し</h1>
+<p class="sub">このPCのブラウザに残っている「センター資材管理アプリ」のデータを、ファイルに保存するだけのページです。データの書き換え・送信はしません。</p>
+<div class="card"><div id="verdict" class="verdict">確認中…</div><div id="reasons"></div></div>
+<div class="card"><table id="summary"></table></div>
+<div class="card" id="dlCard" style="display:none">
+  <button id="dlBtn">⬇ データをファイルに保存</button>
+  <p class="sub" style="margin:10px 0 0">保存したファイルを経営管理部（曽我）へ送ってください。</p>
+</div>
+<div class="card" id="bkCard" style="display:none"><b>このPCに残っている月末バックアップ</b><table id="bk"></table></div>
+</main>
+<script>
+(function(){
+  // 読むだけ。localStorage には一切書き込まない。
+  var KEY='shizai_app_v2';
+  var CENTER_GAS_ID='AKfycbyEzr6jVTWegzY7sChW-axgANWxn9rDcSJV5YPwzhegpUp5z6fh6-O0ISDMZ37LZ8Q';
+  var HIRO_GAS_ID='AKfycbzvyoaRFRlG5LJ30FEoCjwUvhObb6p6jIULlgwWg6sdfTCBF54JbCR5n61Bve7Uktog';
+  var HIRO_ONLY_SKU='ハローズ|土付き|3.34';   // 広島の発注書にしか無いSKU（全角ハローズ）
+  var raw=null, S=null;
+  try{ raw=localStorage.getItem(KEY); S=JSON.parse(raw); }catch(e){}
+  var vEl=document.getElementById('verdict'), rEl=document.getElementById('reasons');
+  function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  if(!S||typeof S!=='object'){ vEl.className='verdict ng'; vEl.textContent='❌ このPCにはセンター資材アプリのデータがありません'; return; }
+
+  var st=S.settings||{}, gas=String(st.gasUrl||'');
+  var skus=S.skus||[], boms=S.boms||{};
+  var bomSkus=skus.filter(function(k){ var b=boms[k.key]; return b&&Object.keys(b).length>0; }).length;
+  var centerBomSkus=skus.filter(function(k){ var b=boms[k.key]; return b&&Object.keys(b).length>0&&k.key!==HIRO_ONLY_SKU&&k.tori!=='ハローズ'&&k.tori!=='万代'&&k.tori!=='マルヨシ'&&k.tori!=='MV西日本'; }).length;
+  var stocks=(S.stocktakes||[]).map(function(x){return x.date||x.month||'';}).filter(Boolean).sort();
+  var orders=(S.orders||[]).map(function(o){return o.date||o.orderDate||'';}).filter(Boolean).sort();
+
+  var bad=[], warn=[];
+  if(gas.indexOf(HIRO_GAS_ID)>=0) bad.push('広島アプリのデータです（GAS URLが広島）');
+  if(S.migHiroSku||S.migHiro0929||S.migHiro1001) bad.push('広島アプリの変換がかかっています（10/15の上書き後のデータ）');
+  if(skus.some(function(k){return k.key===HIRO_ONLY_SKU;})) bad.push('広島の商品（ハローズ 土付き3.34）が混ざっています');
+  if(centerBomSkus===0) bad.push('センターの商品のBOMが1件もありません');
+  if(gas && gas.indexOf(CENTER_GAS_ID)<0 && gas.indexOf(HIRO_GAS_ID)<0) warn.push('GAS URLが見慣れないものです');
+
+  if(bad.length){ vEl.className='verdict ng'; vEl.textContent='❌ このPCのデータは使えません（上書き後か、広島のデータです）'; }
+  else if(warn.length){ vEl.className='verdict warn'; vEl.textContent='⚠ 取り出せますが、念のため確認が必要です'; }
+  else { vEl.className='verdict ok'; vEl.textContent='✅ 上書き前のセンターのデータが残っています'; }
+  var list=bad.concat(warn);
+  rEl.innerHTML=list.length?'<ul>'+list.map(function(x){return '<li>'+esc(x)+'</li>';}).join('')+'</ul>':'';
+
+  var rows=[
+    ['端末名',st.deviceName||'（未設定）'],
+    ['共有モード',st.shareOn?'ON':'OFF'],
+    ['クラウドの版（rev）',(S.cloud&&S.cloud.rev)||0],
+    ['最後にクラウドと同期した時刻',(S.cloud&&S.cloud.savedAt)||'—'],
+    ['資材の数',(S.materials||[]).length],
+    ['商品（SKU）の数',skus.length],
+    ['BOMが入っている商品の数',bomSkus],
+    ['最新の棚卸日',stocks.length?stocks[stocks.length-1]:'—'],
+    ['発注履歴の件数',(S.orders||[]).length+(orders.length?'（最新 '+orders[orders.length-1]+'）':'')],
+    ['データの大きさ',Math.round((raw||'').length/1024)+' KB']
+  ];
+  document.getElementById('summary').innerHTML=rows.map(function(r){return '<tr><th>'+esc(r[0])+'</th><td>'+esc(r[1])+'</td></tr>';}).join('');
+
+  function download(name,text){
+    var a=document.createElement('a'); a.href=URL.createObjectURL(new Blob([text],{type:'application/json'}));
+    a.download=name; document.body.appendChild(a); a.click(); setTimeout(function(){ URL.revokeObjectURL(a.href); a.remove(); },1000);
+  }
+  function ymd(){ var d=new Date(),p=function(n){return ('0'+n).slice(-2);}; return d.getFullYear()+p(d.getMonth()+1)+p(d.getDate())+'_'+p(d.getHours())+p(d.getMinutes()); }
+  var who=(st.deviceName||'端末名なし').replace(/[\\\/:*?"<>|]/g,'_');
+  document.getElementById('dlCard').style.display='';
+  document.getElementById('dlBtn').onclick=function(){ download('センター資材_取り出し_'+who+'_'+ymd()+'.json', raw); };
+
+  var bks=S.backups||[];
+  if(bks.length){
+    document.getElementById('bkCard').style.display='';
+    document.getElementById('bk').innerHTML='<tr><th>月</th><td><b>保存日時・保存者</b></td><td></td></tr>'+bks.map(function(b,i){
+      return '<tr><th>'+esc(b.month)+'</th><td>'+esc(b.savedAt)+' '+esc(b.savedBy||'')+'</td><td><button class="sec" data-i="'+i+'">⬇ 保存</button></td></tr>';
+    }).join('');
+    document.getElementById('bk').addEventListener('click',function(e){
+      var b=e.target.closest('button[data-i]'); if(!b) return; var x=bks[Number(b.dataset.i)];
+      download('センター資材_バックアップ_'+String(x.month).replace(/[^0-9-]/g,'')+'_'+who+'.json', typeof x.json==='string'?x.json:JSON.stringify(x.json));
+    });
+  }
+})();
+</script>
+</body>
+</html>
