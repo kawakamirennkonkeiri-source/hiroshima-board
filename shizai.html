@@ -511,8 +511,14 @@ const SEED_SKUS = [
   ['その他サンプル','Mup',1,1],['その他サンプル','C',1,1],['その他サンプル','S',1,1],
 ];
 /* =================== STATE =================== */
-const LS='shizai_app_v2';
-const APP_VER=20261005.2;   // 画面の版。クラウドに新しい版で保存されていたら、古い画面は自動で読み直す（古い画面が古い計算で上書きしないように）
+// 2026-10-15〜 広島専用のキー。旧キー'shizai_app_v2'はセンターの資材アプリ（同じgithub.io）と同じ名前で、
+//   同じPCで両方を開くとデータとGAS URLを共有してしまい、広島アプリがセンターのクラウドを上書きした（10/15実例）。
+//   旧キーは移行のため読むだけ。書き込み・削除はしない（センターのアプリが使っている）。
+const LS='hb_shizai_v1';
+const LS_OLD='shizai_app_v2';
+const ALERTS_LS='hb_shizai_alerts';   // 旧'shizai_alerts'はセンター電子黒板が読むので書かない
+const CENTER_GAS_ID='AKfycbyEzr6jVTWegzY7sChW-axgANWxn9rDcSJV5YPwzhegpUp5z6fh6-O0ISDMZ37LZ8Q';   // センター連携GAS。広島アプリからは絶対につながない
+const APP_VER=20261015.1;   // 画面の版。クラウドに新しい版で保存されていたら、古い画面は自動で読み直す（古い画面が古い計算で上書きしないように）
 let S=null;
 function skuKey(t,k,i){return t+'|'+k+'|'+i;}
 function bunruiTag(k){
@@ -572,12 +578,24 @@ function todayStr(){const d=new Date();const p=n=>String(n).padStart(2,'0');
   return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate());}
 // 既定のGAS URL（デプロイ済み）。設定画面から変更できる。
 const GAS_URL_DEFAULT='https://script.google.com/macros/s/AKfycbzvyoaRFRlG5LJ30FEoCjwUvhObb6p6jIULlgwWg6sdfTCBF54JbCR5n61Bve7Uktog/exec';
-function load(){ try{S=JSON.parse(localStorage.getItem(LS));}catch(e){} if(!S)S=defaultState();
+function isCenterGasUrl(u){ return String(u||'').indexOf(CENTER_GAS_ID)>=0; }
+// 旧キーからの移行：広島のGASにつながっていたデータだけ引き継ぐ。センターのデータ（GAS URLがセンター等）は
+//   引き継がず初期状態から始め、共有ONで広島のクラウドを読み込む（端末名だけ引き継ぐ）。
+function loadFromOldKey(){
+  let old=null; try{ old=JSON.parse(localStorage.getItem(LS_OLD)); }catch(e){}
+  if(!old||!old.settings) return null;
+  const u=String(old.settings.gasUrl||'').trim();
+  if(u===GAS_URL_DEFAULT) return old;
+  const s=defaultState(); s.settings.shareOn=true; s.settings.deviceName=old.settings.deviceName||'';
+  return s;
+}
+function load(){ try{S=JSON.parse(localStorage.getItem(LS));}catch(e){} if(!S)S=loadFromOldKey(); if(!S)S=defaultState();
   S.funes=S.funes||{};S.futureFunes=S.futureFunes||{};S.orders=S.orders||[];S.stocktakes=S.stocktakes||[];S.boms=S.boms||{};S.backups=S.backups||[];S.recounts=S.recounts||[];S.scrapLog=S.scrapLog||[];
   S.settings=Object.assign({safetyDays:30,scrapAlertPct:10,shareOn:false,deviceName:''},S.settings);
   S.cloud=Object.assign({rev:0,savedAt:'',savedBy:''},S.cloud);
   S.busy=S.busy||{};                                   // ② 繁忙期の「全資材 再確認」記録（YYYY-MM → {by,at}）
   if(!(S.settings.gasUrl||'').trim()) S.settings.gasUrl=GAS_URL_DEFAULT;   // 未設定なら既定のGASにつなぐ
+  if(isCenterGasUrl(S.settings.gasUrl)) S.settings.gasUrl=GAS_URL_DEFAULT; // センターのGASにはつながない
   migrateV3();
   migHiroshimaSku();
   migHiro0929();
@@ -876,7 +894,7 @@ function publishAlerts(){
   try{const a=buildAlerts();const st=stocktakeStatus();
     const late=a.deliver.filter(d=>d.late);
     const due=a.deliver.filter(d=>d.dueReached);   // 納品予定日が来た（=当日以降）
-    localStorage.setItem('shizai_alerts',JSON.stringify({
+    localStorage.setItem(ALERTS_LS,JSON.stringify({
       asOf:todayStr(),
       reorderCount:a.reorder.length,deliverCount:due.length,scrapCount:a.scrap.length,periodicCount:a.periodic.length,
       total:a.reorder.length+due.length+a.scrap.length+a.periodic.length+(st.due?1:0),
@@ -1745,7 +1763,7 @@ function applyLive(data,silent){
 
 /* =================== CLOUD SYNC（ほかのPCと共有） =================== */
 let cloudPushTimer=null, cloudPollTimer=null, cloudDirty=false, cloudBusy=false;
-function shareEnabled(){ return !!(S.settings.shareOn && (S.settings.gasUrl||'').trim()); }
+function shareEnabled(){ return !!(S.settings.shareOn && (S.settings.gasUrl||'').trim() && !isCenterGasUrl(S.settings.gasUrl)); }
 function setSyncStatus(txt,color){ const el=document.getElementById('syncStatus'); if(el){ el.textContent=txt; el.style.color=color||''; }
   // ヘッダーにも常時表示（共有オフ・エラーにその場で気づけるように）
   const mi=document.getElementById('syncMini');
@@ -1916,6 +1934,7 @@ setInterval(()=>{
 /* =================== SETTINGS/IO =================== */
 function saveSettings(){
   S.settings.gasUrl=document.getElementById('gasUrl').value.trim();
+  if(isCenterGasUrl(S.settings.gasUrl)){ alert('これはセンターの資材アプリのGAS URLです。広島のアプリでは使えません（広島の既定URLに戻します）。'); S.settings.gasUrl=GAS_URL_DEFAULT; document.getElementById('gasUrl').value=GAS_URL_DEFAULT; }
   S.settings.startDate=document.getElementById('startDate').value||'2026-09-05';
   S.settings.baseDate=todayStr();
   S.settings.safetyDays=Number(document.getElementById('safetyDays').value||0);
